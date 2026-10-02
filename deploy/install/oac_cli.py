@@ -832,6 +832,7 @@ def written_view(root, state, config):
 def applied_view(values):
     """The config the settings last written describe."""
     return {"ingress": values.get("ingress"), "public_url": values.get("public_url"), "host": values["host"],
+            "allow_insecure_origin": values.get("allow_insecure_origin", False),
             "ports": {name: values[f"ports.{name}"] for name in ("core", "web") if f"ports.{name}" in values}}
 
 
@@ -876,6 +877,9 @@ def status(root, out=print):
     healthy = healthy and web_ok
     out("Web: " + ("healthy" if web_ok else "unavailable"))
     out("Public URL: " + (config["public_url"] or ("not configured; set up HTTPS in Web" if ingress_config.enabled(config) else "none (local access only)")))
+    if config.get("allow_insecure_origin") and (config.get("public_url") or "").startswith("http://"):
+        out("Warning: allow_insecure_origin is enabled; Core and Web are served over plaintext HTTP, "
+            "and credentials and API keys travel unencrypted")
     out("API base URL: " + configuration.local_public_url(config) + "/v1")
     out("Console: " + (ingress_config.console_origin(config) if ingress_config.enabled(config) else
                        config["public_url"] or configuration.service_origin(config, "web")))

@@ -214,6 +214,10 @@ class OacTests(unittest.TestCase):
         self.assertEqual(self.host.http(url, oac_cli.bearer(old))[0], 401)
         self.assertConverged()
 
+    def test_status_warns_about_a_plaintext_http_origin(self):
+        self.install(public_url="http://10.0.0.5:8080", allow_insecure_origin=True)
+        self.assertTrue(any("allow_insecure_origin is enabled" in line for line in self.status()), self.output)
+
     def test_public_url_change_lists_bindings_and_requires_confirmation(self):
         self.install(public_url="https://core.example")
         self.host.bindings.update(nodes=2, hosted_sandboxes=2)

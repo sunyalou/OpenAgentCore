@@ -126,7 +126,7 @@ def public_origin(value):
         value = parsed._replace(scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower()).geturl()
     except ValueError:
         value = ""
-    if not valid_core_origin(value):
+    if not valid_core_origin(value, allow_insecure=True):
         raise argparse.ArgumentTypeError("Public URL must be an HTTPS origin such as https://core.example, "
                                          "without path, credentials, query or fragment; plain HTTP only for a loopback host")
     return value
@@ -136,6 +136,9 @@ def arguments(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-dir", type=Path)
     for flag, (_, node) in SETTING_ARGUMENTS.items():
+        if node.get("type") == "boolean":
+            parser.add_argument(flag, action="store_true", help=node["description"])
+            continue
         value_type = int if node.get("type") == "integer" else public_origin if config_model.annotation(node, "check") == "origin" else str
         parser.add_argument(flag, type=value_type, help=node["description"])
     parser.add_argument("--config", type=Path, help="Seed a new installation's config.json from this file")
@@ -143,6 +146,11 @@ def arguments(argv=None):
     args.install_dir = args.install_dir or Path.home() / ".oac/core"
     if not args.install_dir.is_absolute():
         parser.error("--install-dir must be absolute")
+    # public_origin accepts a non-loopback HTTP origin so --allow-insecure-origin can seed one;
+    # without the flag the strict rule stays the parse-time error.
+    if args.public_url and not args.allow_insecure_origin and not valid_core_origin(args.public_url):
+        parser.error("argument --public-url: Public URL must be an HTTPS origin such as https://core.example, "
+                     "without path, credentials, query or fragment; plain HTTP only for a loopback host")
     args.given = [name for name, value in vars(args).items()
                   if name not in ("install_dir", "given") and value not in (None, False)]
     return args
@@ -152,7 +160,7 @@ def seed_document(args):
     """The --config file, which replaces the setting flags."""
     if args.config is None:
         return None
-    if any(getattr(args, name) is not None for name in SETTING_FLAGS):
+    if any(getattr(args, name) not in (None, False) for name in SETTING_FLAGS):
         raise InstallError("--config replaces the setting flags; put those settings in the file")
     try:
         document = json.loads(args.config.read_text())
@@ -186,7 +194,8 @@ def check_listeners(args, document, config):
     """
     if document is None:
         names, where = {key: flag for flag, (key, _) in SETTING_ARGUMENTS.items()}, ""
-        given = {key for key, flag in names.items() if getattr(args, flag.removeprefix("--").replace("-", "_")) is not None}
+        given = {key for key, flag in names.items()
+                 if getattr(args, flag.removeprefix("--").replace("-", "_")) not in (None, False)}
     else:
         names, where = {}, " in the --config file"
         given = {key for key in ("ports.core", "ports.web") if config_model.lookup(document, key) is not None}
@@ -233,9 +242,10 @@ def origin_port(value):
     return parsed.port or (443 if parsed.scheme == "https" else 80)
 
 
-def nodes_reach(public_url):
-    """Nodes and their sandboxes need an HTTPS public URL that is not loopback."""
-    return urlsplit(public_url or "").scheme == "https" and not loopback_origin(public_url)
+def nodes_reach(public_url, allow_insecure=False):
+    """Nodes and their sandboxes need a public URL that is not loopback; plain HTTP only with the switch."""
+    scheme = urlsplit(public_url or "").scheme
+    return not loopback_origin(public_url) and (scheme == "https" or allow_insecure and scheme == "http")
 
 
 def check_compose():
@@ -527,7 +537,7 @@ def summary(root, config, fresh, selection=None, deployment=None, incomplete=Fal
         # The loopback Web port does not serve the public API.
         addresses.append("API base URL: " + api + " (local only)")
     install_output.summary(root, config, addresses, fresh, selection, deployment,
-                           nodes_reach(public_url), incomplete, moved)
+                           nodes_reach(public_url, config["allow_insecure_origin"]), incomplete, moved)
 
 
 def main(argv=None):

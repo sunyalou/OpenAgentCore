@@ -36,6 +36,15 @@ def sandbox_lines(config, selection, deployment, reachable):
     return lines
 
 
+def insecure_origin_warning(config):
+    """The plaintext warning for allow_insecure_origin, or None when the origin is safe."""
+    origin = config.get("public_url") or ""
+    if not config.get("allow_insecure_origin") or not origin.startswith("http://"):
+        return None
+    return ("allow_insecure_origin is enabled: " + origin + " serves Core and Web over plaintext HTTP. "
+            "Credentials and API keys travel unencrypted; use this only on a trusted network.")
+
+
 def summary(root, config, addresses, fresh, selection, deployment, reachable, incomplete, moved=()):
     status = ("Services are running; sandbox setup needs attention." if incomplete else
               "Installation complete." if fresh else "Installation settings checked. Use Status below to inspect service health.")
@@ -43,6 +52,9 @@ def summary(root, config, addresses, fresh, selection, deployment, reachable, in
     heading("Access")
     for address in addresses:
         print("  " + address)
+    warning = insecure_origin_warning(config)
+    if warning:
+        paragraph(color("Warning: " + warning, "33"))
     for purpose, taken, port in moved:
         print(f"  Port {taken} was in use; {purpose} uses {port}.")
     heading("Sign in")

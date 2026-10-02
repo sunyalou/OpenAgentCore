@@ -25,10 +25,12 @@ POOL = (("max_conns", "pool_max_conns"), ("min_conns", "pool_min_conns"),
 _HOST_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 
 
-def valid_core_origin(value):
+def valid_core_origin(value, allow_insecure=False):
     """Accept exactly the origins Core's deployment.ValidateCoreURL accepts
     (services/core/internal/deployment/public_url.go), so an
-    installer value never fails Core's OAC_PUBLIC_URL check at startup."""
+    installer value never fails Core's OAC_PUBLIC_URL check at startup.
+    allow_insecure additionally accepts a non-loopback HTTP origin, which Core
+    accepts only when OAC_ALLOW_INSECURE_ORIGIN is set."""
     if not isinstance(value, str) or any(char in value for char in "?#@\\% \t\r\n"):
         return False
     try:
@@ -57,7 +59,7 @@ def valid_core_origin(value):
         if netloc.startswith("[") or len(host) > 253 or not all(_HOST_LABEL.fullmatch(label) for label in host.split(".")):
             return False
         loopback = host == "localhost"
-    return parsed.scheme == "https" or loopback
+    return parsed.scheme == "https" or loopback or (allow_insecure and parsed.scheme == "http")
 
 
 def environment_text(values, header):
@@ -204,6 +206,8 @@ def core_environment(root, config, state):
         "OAC_EXECUTION_CONCURRENCY": str(core["execution_concurrency"]),
         "OAC_WRITE_AUDIT_RETENTION": core["write_audit_retention"],
     }
+    if config["allow_insecure_origin"]:
+        result["OAC_ALLOW_INSECURE_ORIGIN"] = "1"
     if (root / "native-installers/catalog.json").is_file():
         result["OAC_NATIVE_INSTALLER_DIR"] = "/opt/oac/native-installers"
     if core["oauth_trusted_origins"]:
@@ -260,6 +264,8 @@ def compose_config(root, config, state, candidate=None):
         "OAC_WEB_CORE_KEY_FILE": f"{RUN}/core.key",
         "OAC_WEB_NODE_PAYLOAD_DIR": "/node-payload",
     }
+    if config["allow_insecure_origin"]:
+        environment["OAC_ALLOW_INSECURE_ORIGIN"] = "1"
     environment.update(log_environment(config["log"]))
     web = {"image": images["web"], "user": identity, "restart": "unless-stopped",
            "ports": [service_address(config, "web") + ":8080"], "read_only": True,

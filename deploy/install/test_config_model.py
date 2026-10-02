@@ -34,7 +34,7 @@ class ConfigModelTests(unittest.TestCase):
                 self.assertIs(node.get("additionalProperties"), False)
 
     def test_new_config_lists_every_setting(self):
-        expected = ["public_url", "host", "ports.core", "ports.web", "log.level", "log.format",
+        expected = ["public_url", "allow_insecure_origin", "host", "ports.core", "ports.web", "log.level", "log.format",
                     "log.add_source", "core.execution_concurrency", "core.harnesses", "core.default_harness",
                     "core.write_audit_retention", "core.oauth_trusted_origins", "core.database_pool.max_conns",
                     "core.database_pool.min_conns", "core.database_pool.max_conn_lifetime",
@@ -74,6 +74,26 @@ class ConfigModelTests(unittest.TestCase):
         for origin in ("http://127.0.0.1:8080", "http://localhost:8080", "https://core.example:8443",
                        "https://[2001:db8::1]:8443", "http://[::1]:8080", "http://[::ffff:127.0.0.1]:8080"):
             config_model.validate(dict(base, public_url=origin))
+
+    def test_allow_insecure_origin_switch_relaxes_only_the_https_rule(self):
+        base = {"format": 1, "public_url": "http://10.0.0.5:8080"}
+        # The switch accepts a non-loopback HTTP origin and reaches the settings snapshot and Core environment.
+        config = config_model.validate(dict(base, allow_insecure_origin=True))
+        self.assertEqual(config["public_url"], "http://10.0.0.5:8080")
+        self.assertIs(config_model.values(config)["allow_insecure_origin"], True)
+        self.assertEqual(configuration.core_environment(Path("/installation"), config, {"installation_id": "fixture"})
+                         ["OAC_ALLOW_INSECURE_ORIGIN"], "1")
+        # Without the switch the rule is unchanged, and it is still only an origin rule: canonical-form errors stay.
+        with self.assertRaises(config_model.ConfigError) as raised:
+            config_model.validate(dict(base))
+        self.assertIn("public_url: must be a canonical origin", str(raised.exception))
+        with self.assertRaises(config_model.ConfigError) as raised:
+            config_model.validate({"format": 1, "host": "0.0.0.0"})
+        self.assertIn("public_url: an HTTPS origin is required when host is not loopback", str(raised.exception))
+        config_model.validate({"format": 1, "host": "0.0.0.0", "allow_insecure_origin": True})
+        self.assertNotIn("OAC_ALLOW_INSECURE_ORIGIN",
+                         configuration.core_environment(Path("/installation"), config_model.initial(),
+                                                        {"installation_id": "fixture"}))
 
     def test_generated_files_hold_no_secret_and_the_snapshot_hides_sensitive_values(self):
         base = Path.home() / ".oac/tests/config-model"

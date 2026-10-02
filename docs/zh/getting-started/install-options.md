@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 7178baf93a8d8b6e7f086d73033afe4ea14afcf41c88dbcc6031a3a6dd20ca17
+source_hash: a58c8f1217140514e9f2bc84b4fed577d1bbca7e30ab950a2aceb3b699ecad6b
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -56,6 +56,7 @@ docker compose -f compose.yaml run --rm credentials
 | Flag | config.json field |
 | --- | --- |
 | `--public-url` | `public_url` |
+| `--allow-insecure-origin` | `allow_insecure_origin` |
 | `--host` | `host` |
 | `--core-port` | `ports.core` |
 | `--web-port` | `ports.web` |
@@ -63,6 +64,8 @@ docker compose -f compose.yaml run --rm credentials
 [//]: # (END install-flags)
 
 `--config FILE` 会改为从 JSON 文件初始化 `config.json`，而不再使用这些设置标志；两者不能结合使用。`--config` 文档遵循 schema 默认值，因此若要使用托管 HTTPS，请在其中设置 `ingress: "managed"` 和 `host: "0.0.0.0"`。
+
+`--allow-insecure-origin` 会初始化 `allow_insecure_origin`，它允许 `public_url` 使用非回环的 `http://` 源地址。该选项默认关闭，仅适用于开发和测试安装：凭据、API 密钥和 Session 流量随后会以明文传输。TLS 证书校验保持不变；参阅[设置](../configuration.md#settings)。
 
 ## 安装操作 {#installation-actions}
 
@@ -84,7 +87,7 @@ docker compose -f compose.yaml run --rm credentials
 
 默认安装会选择 `--ingress managed` 和 `--host 0.0.0.0`。其网关会在 `--web-port` 上发布 Web（默认为 8080），并在启用 HTTPS 后发布端口 80 和 443。Core 的 `--core-port` 保持为回环地址，PostgreSQL 保持私有。`--host` 接受 IPv4 或 IPv6 地址，但不能包含端口、协议方案或区域。请在浏览器中使用服务器的具体 IP 地址，而不是通配地址。托管入口需要本地 Docker Unix 套接字。
 
-`--ingress external` 会改用你自己的反向代理。随后 Core 和 Web 会在 `--host` 上监听，默认是回环地址。外部非回环监听器需要基于 HTTPS 的 `public_url` 和[反向代理](#https-and-the-reverse-proxy)，并且无法使用 Web 的域名设置：请在 `config.json` 中设置 `public_url`，然后运行 `oac apply`。
+`--ingress external` 会改用你自己的反向代理。随后 Core 和 Web 会在 `--host` 上监听，默认是回环地址。外部非回环监听器需要基于 HTTPS 的 `public_url`（或在使用 `allow_insecure_origin` 时使用非回环的 `http://` `public_url`）和[反向代理](#https-and-the-reverse-proxy)，并且无法使用 Web 的域名设置：请在 `config.json` 中设置 `public_url`，然后运行 `oac apply`。
 
 `--public-url` 会为无人值守设置初始化一个基于 DNS 的 HTTPS 源地址；使用托管入口时，证书和连接检查必须通过。安装完成后，入口模式便固定不变。
 

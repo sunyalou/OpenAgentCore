@@ -615,6 +615,16 @@ class InstallerTests(unittest.TestCase):
             self.assertFalse(install.valid_core_origin(origin), origin)
             self.assertFalse(config_model.CHECKS["origin"][0](origin), origin)
 
+    def test_allow_insecure_origin_flag_seeds_the_setting_and_keeps_the_default_error(self):
+        args = install.arguments(["--ingress", "external", "--public-url", "http://10.0.0.5:8080",
+                                  "--allow-insecure-origin"])
+        self.assertTrue(args.allow_insecure_origin)
+        config = install.seed_config(args, None)
+        self.assertEqual(config["public_url"], "http://10.0.0.5:8080")
+        self.assertIs(config["allow_insecure_origin"], True)
+        with self.assertRaises(SystemExit):
+            install.arguments(["--public-url", "http://10.0.0.5:8080"])
+
 
 class ComposePrerequisiteTests(unittest.TestCase):
     def test_compose_requires_the_literal_environment_parser(self):

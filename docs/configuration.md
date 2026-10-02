@@ -51,7 +51,8 @@ When nodes, hosted sandboxes or self-hosted executors are bound to the current a
 | --- | --- | --- | --- | --- | --- |
 | `$schema` | string | none | any time | none | Editor hint that points at the installed copy of this schema. Ignored. |
 | `format` | `1` | none | fixed | none | Configuration format for this release. Fixed after installation. |
-| `public_url` | string or null (canonical origin; HTTP only on loopback) | `null` | `oac apply` | core, web | Canonical public origin of Core and Web. With managed ingress, set the DNS hostname in Web or run oac domain; certificates are automatic. With external ingress, configure your TLS reverse proxy before applying this value. |
+| `public_url` | string or null (canonical origin; HTTP only on loopback unless allow_insecure_origin is true) | `null` | `oac apply` | core, web | Canonical public origin of Core and Web. With managed ingress, set the DNS hostname in Web or run oac domain; certificates are automatic. With external ingress, configure your TLS reverse proxy before applying this value. |
+| `allow_insecure_origin` | boolean | `false` | `oac apply` | core, web | Allow a non-loopback HTTP public_url. For development and testing only: credentials and API keys then travel in plaintext. |
 | `host` | string (IPv4 or IPv6 address) | `"127.0.0.1"` | `oac apply` | core, web | Listener IP. With managed ingress only the gateway is public; Core stays on loopback. The default installer listens on all IPv4 interfaces. |
 | `ports.core` | integer 1024–65535 | `8091` | `oac apply` | core | Host port of the Core API. |
 | `ports.web` | integer 1024–65535 | `8080` | `oac apply` | web | Host port of Web. |

@@ -61,6 +61,19 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(error.getvalue(), "Installation failed: service did not become healthy\n")
         self.assertNotIn("failed", stream.getvalue())
 
+    def test_summary_warns_about_a_plaintext_http_origin(self):
+        stream = io.StringIO()
+        config = {"ports": {"core": 8091}, "public_url": "http://10.0.0.5:8080", "allow_insecure_origin": True}
+        with contextlib.redirect_stdout(stream):
+            output.summary(Path("/tmp/oac"), config, ["Console: http://10.0.0.5:8080"], True, None, None, True, False)
+        self.assertIn("allow_insecure_origin is enabled", stream.getvalue())
+        self.assertIn("plaintext HTTP", stream.getvalue())
+        safe = io.StringIO()
+        with contextlib.redirect_stdout(safe):
+            output.summary(Path("/tmp/oac"), {"ports": {"core": 8091}}, ["Console: https://core.example"],
+                           True, None, None, True, False)
+        self.assertNotIn("allow_insecure_origin", safe.getvalue())
+
     def test_summary_groups_details_and_keeps_commands_copyable(self):
         stream = io.StringIO()
         root = Path("/tmp/install with spaces")

@@ -58,10 +58,11 @@ def lookup(config, key):
 
 
 # Checks named by x-oac.check. Core stays the authority for its own semantic rules.
-def _origin(value, https_only=False):
+def _origin(value, allow_insecure=False, https_only=False):
     """Core's deployment.ValidateCoreURL rule, through the installer's one implementation of it."""
     from configuration import valid_core_origin  # configuration imports this module at load time
-    return valid_core_origin(value) and (not https_only or value.startswith("https://"))
+    origin_ok = valid_core_origin(value, allow_insecure=allow_insecure and not https_only)
+    return origin_ok and (not https_only or value.startswith("https://"))
 
 
 _DURATION_UNITS = {"ns": 1e-9, "us": 1e-6, "µs": 1e-6, "μs": 1e-6, "ms": 1e-3, "s": 1, "m": 60, "h": 3600}
@@ -91,12 +92,15 @@ def _listen_host(value):
 
 
 CHECKS = {
-    "listen_host": (_listen_host, "must be an IPv4 or IPv6 address without a port or zone"),
+    "listen_host": (lambda value, allow_insecure=False: _listen_host(value),
+                    "must be an IPv4 or IPv6 address without a port or zone"),
     "origin": (_origin, "must be a canonical origin such as https://core.example: lowercase, no path or "
                         "trailing slash, and HTTP only for a loopback host"),
-    "https_origin": (lambda value: _origin(value, https_only=True), "must be a canonical HTTPS origin"),
-    "go_duration": (lambda value: duration_seconds(value) is not None, "must be a Go duration such as 30m or 1h"),
-    "go_duration_min_1h": (lambda value: (duration_seconds(value) or 0) >= 3600,
+    "https_origin": (lambda value, allow_insecure=False: _origin(value, https_only=True),
+                     "must be a canonical HTTPS origin"),
+    "go_duration": (lambda value, allow_insecure=False: duration_seconds(value) is not None,
+                    "must be a Go duration such as 30m or 1h"),
+    "go_duration_min_1h": (lambda value, allow_insecure=False: (duration_seconds(value) or 0) >= 3600,
                            "must be a Go duration of at least 1h"),
 }
 
@@ -108,7 +112,7 @@ def _type_ok(value, name):
                               "null": type(None)}[name])
 
 
-def _validate(node, value, key, problems):
+def _validate(node, value, key, problems, allow_insecure=False):
     label = key or "config.json"
     types = node.get("type")
     if types is not None:
@@ -130,7 +134,7 @@ def _validate(node, value, key, problems):
     if isinstance(value, str) and "pattern" in node and not re.search(node["pattern"], value):
         problems.append(f"{label}: has an invalid format")
     check = annotation(node, "check")
-    if check and isinstance(value, str) and not CHECKS[check][0](value):
+    if check and isinstance(value, str) and not CHECKS[check][0](value, allow_insecure):
         problems.append(f"{label}: {CHECKS[check][1]}")
     if isinstance(value, list):
         if len(value) < node.get("minItems", 0):
@@ -138,7 +142,7 @@ def _validate(node, value, key, problems):
         if node.get("uniqueItems") and len({json.dumps(item, sort_keys=True) for item in value}) != len(value):
             problems.append(f"{label}: lists an item twice")
         for index, item in enumerate(value):
-            _validate(node.get("items", {}), item, f"{label}[{index}]", problems)
+            _validate(node.get("items", {}), item, f"{label}[{index}]", problems, allow_insecure)
     if isinstance(value, dict):
         properties = node.get("properties", {})
         for name in node.get("required", []):
@@ -147,9 +151,9 @@ def _validate(node, value, key, problems):
         for name, item in value.items():
             child = f"{key}.{name}" if key else name
             if name in properties:
-                _validate(properties[name], item, child, problems)
+                _validate(properties[name], item, child, problems, allow_insecure)
             elif isinstance(node.get("additionalProperties"), dict):
-                _validate(node["additionalProperties"], item, child, problems)
+                _validate(node["additionalProperties"], item, child, problems, allow_insecure)
             else:
                 problems.append(f"{child}: unknown key")
 
@@ -174,7 +178,7 @@ def validate(config):
     if not isinstance(config, dict):
         raise ConfigError(["config.json: must be a JSON object"])
     problems = []
-    _validate(SCHEMA, config, "", problems)
+    _validate(SCHEMA, config, "", problems, config.get("allow_insecure_origin") is True)
     if problems:
         raise ConfigError(problems)
     full = copy.deepcopy(config)
@@ -193,7 +197,8 @@ def validate(config):
                 raise ValueError()
         except ValueError:
             problems.append("public_url: managed HTTPS requires https:// followed by a DNS hostname, without a port")
-    if not managed and not loopback_listener(full["host"]) and not (full["public_url"] or "").startswith("https://"):
+    if (not managed and not loopback_listener(full["host"])
+            and not (full["public_url"] or "").startswith("https://") and not full["allow_insecure_origin"]):
         problems.append("public_url: an HTTPS origin is required when host is not loopback")
     core = full["core"]
     if core["default_harness"] not in core["harnesses"]:

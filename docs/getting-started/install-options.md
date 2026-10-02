@@ -53,6 +53,7 @@ These flags seed the installation's `config.json` once. Their defaults, valid va
 | Flag | config.json field |
 | --- | --- |
 | `--public-url` | `public_url` |
+| `--allow-insecure-origin` | `allow_insecure_origin` |
 | `--host` | `host` |
 | `--core-port` | `ports.core` |
 | `--web-port` | `ports.web` |
@@ -60,6 +61,8 @@ These flags seed the installation's `config.json` once. Their defaults, valid va
 [//]: # (END install-flags)
 
 `--config FILE` seeds `config.json` from a JSON file instead of these setting flags; they cannot be combined. A `--config` document follows the schema defaults, so set `ingress: "managed"` and `host: "0.0.0.0"` in it for managed HTTPS.
+
+`--allow-insecure-origin` seeds `allow_insecure_origin`, which lets `public_url` be a non-loopback `http://` origin. It is off by default and is for development and test installations only: credentials, API keys and Session traffic then travel in plaintext. TLS certificate verification is unchanged; see [Settings](../configuration.md#settings).
 
 ## Installation actions
 
@@ -81,7 +84,7 @@ To use Docker or E2B, or another size, open **System** → **Manage sandbox conf
 
 The default installation selects `--ingress managed` and `--host 0.0.0.0`. Its gateway publishes Web on `--web-port` (8080 by default), and [ports 80 and 443](#ports) once HTTPS is on. Core's `--core-port` stays on loopback and PostgreSQL stays private. `--host` accepts IPv4 or IPv6, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard. Managed ingress needs a local Docker Unix socket.
 
-`--ingress external` uses your own reverse proxy instead. Core and Web then listen on `--host`, loopback by default. External non-loopback listeners require an HTTPS `public_url` and a [reverse proxy](#https-and-the-reverse-proxy), and Web's domain setup is unavailable: set `public_url` in `config.json` and run `oac apply`.
+`--ingress external` uses your own reverse proxy instead. Core and Web then listen on `--host`, loopback by default. External non-loopback listeners require an HTTPS `public_url` (or a non-loopback HTTP one with `allow_insecure_origin`) and a [reverse proxy](#https-and-the-reverse-proxy), and Web's domain setup is unavailable: set `public_url` in `config.json` and run `oac apply`.
 
 `--public-url` seeds a DNS-based HTTPS origin for unattended setup; with managed ingress, the certificate and connectivity checks must pass. The ingress mode is fixed for an installation.
 

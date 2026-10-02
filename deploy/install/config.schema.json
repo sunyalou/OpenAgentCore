@@ -27,6 +27,17 @@
         "install_flag": "--public-url"
       }
     },
+    "allow_insecure_origin": {
+      "type": "boolean",
+      "default": false,
+      "description": "Allow a non-loopback HTTP public_url. For development and testing only: credentials and API keys then travel in plaintext.",
+      "x-oac": {
+        "changeable": true,
+        "restarts": ["core", "web"],
+        "derives": ["OAC_ALLOW_INSECURE_ORIGIN"],
+        "install_flag": "--allow-insecure-origin"
+      }
+    },
     "host": {
       "type": "string",
       "default": "127.0.0.1",
