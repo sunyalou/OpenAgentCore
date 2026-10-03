@@ -33,11 +33,6 @@ on:
         required: false
         default: '8080'
         type: string
-  # TEMPORARY (OAC-20 first self-test): GitHub only dispatches a workflow that
-  # already exists on the default branch, so the first run rides this branch
-  # push. Remove before merge; manual dispatch is the only trigger afterwards.
-  push:
-    branches: ['feat/oac-20-e2e-install-workflow']
 
 permissions:
   contents: read
