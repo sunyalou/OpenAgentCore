@@ -59,6 +59,7 @@ services:
       database: {condition: service_healthy}
     environment:
       OAC_PUBLIC_URL: &public-url ${OAC_PUBLIC_URL:-http://localhost:8080}
+      OAC_ALLOW_INSECURE_ORIGIN: ${OAC_ALLOW_INSECURE_ORIGIN:-}
       OAC_INSTALLATION_ID_FILE: /run/oac/installation.id
       OAC_DATABASE_URL: postgres://agents_api@database:5432/agents_api?sslmode=disable
       OAC_DATABASE_PASSWORD_FILE: /run/database/password

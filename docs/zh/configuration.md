@@ -1,14 +1,14 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 610b3a85b453d00b575f9fb4d42c87ec89dc3803bb238fd4c36ef734aba6c7e2
+source_hash: 1dbb0c3af7312e925639e9e0a3c868697ff7cbbd321d7aa387ca6732927a38a3
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
 
 | 类型 | 示例 | 归属位置 | 修改方式 | 生效方式 |
 | --- | --- | --- | --- | --- |
-| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
+| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、允许不安全源地址、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
 | [运行时设置](#runtime-settings-web) | 沙箱后端和大小、节点、项目和密钥、默认模型、执行器凭据 | Core 的 PostgreSQL 数据库 | 在 Web 中修改，或使用 Core 密钥调用 Core API（`/core/v1`） | 保存时无需重启 Core；节点会异步准备 Runtime 变更 |
 
 Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示 Core 加载的进程设置。机密信息存放在 [`data/secrets/`](#installation-directory) 中，每项仅保存一份。没有任何配置文件定义项目或 API 密钥。
@@ -33,6 +33,8 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 `OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web；反向代理或托管平台终止 HTTPS 并把流量转到该端口。
 
+`http://` 源地址仅对回环主机被接受。开发或测试安装可以设置 `OAC_ALLOW_INSECURE_ORIGIN=1` 来接受非回环源地址；TLS 证书校验保持不变。
+
 要更改它，先把反向代理指向新地址，然后编辑 `OAC_PUBLIC_URL` 并运行 `oac apply`。之后：
 
 - 使用旧地址的节点不会再获得新沙箱：请在 Web 中移除这些节点，然后重新添加。
@@ -48,6 +50,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
+| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing. TLS certificate verification stays on |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
@@ -154,7 +157,7 @@ Core 只读取其环境。Compose 把 `.env` 插值进服务环境。Compose 必
 | `OAC_CREDENTIAL_KEY_FILE` | `data/secrets/core/credential.key` |
 | `OAC_CORE_KEY_DIGESTS_FILE` | `data/secrets/core/core-key-digests.json`：一个包含 Core 密钥 SHA-256 的 JSON 数组 |
 | `OAC_INSTALLATION_ID_FILE` | `data/secrets/core/installation.id`：安装 ID，采用规范 UUID 格式。它会启用沙箱部署和节点路由，并要求设置 `OAC_PUBLIC_URL` 和 `OAC_CORE_KEY_DIGESTS_FILE`。如果 ID 与数据库记录的 ID 不一致，Core 会拒绝它，因此必须将两者一同保留 |
-| `OAC_EXECUTION_CONCURRENCY`、`OAC_DEFAULT_HARNESS`、`OAC_HARNESSES`、`OAC_WRITE_AUDIT_RETENTION`、`OAC_OAUTH_TRUSTED_ORIGINS` | 对应的[进程设置](#settings)。`oac-core check-config` 会在不启动 Core 的情况下校验它们 |
+| `OAC_EXECUTION_CONCURRENCY`、`OAC_DEFAULT_HARNESS`、`OAC_HARNESSES`、`OAC_WRITE_AUDIT_RETENTION`、`OAC_OAUTH_TRUSTED_ORIGINS`、`OAC_ALLOW_INSECURE_ORIGIN` | 对应的[进程设置](#settings)。`oac-core check-config` 会在不启动 Core 的情况下校验它们 |
 | `OAC_HISTORY_SETTINGS_FILE` | 可选的 Runtime 历史文件。敏感；安装报告只说明它是否已设置 |
 | `OAC_LOG_LEVEL`、`OAC_LOG_FORMAT`、`OAC_LOG_ADD_SOURCE` | `log.*`；Web 也读取这三个设置 |
 | `OAC_PROVIDER_ROOT` | 适配器构件的绝对根目录。Core 镜像设置为 `/opt/oac`。每个适配器都拥有此根目录下的辅助路径 |

@@ -50,8 +50,11 @@ These flags are written to `.env` once. After installation, edit that file and r
 | Flag | `.env` variable |
 | --- | --- |
 | `--public-url` | `OAC_PUBLIC_URL` |
+| `--allow-insecure-origin` | `OAC_ALLOW_INSECURE_ORIGIN` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
+
+`--allow-insecure-origin` permits a non-loopback plain-HTTP `--public-url` for development and testing. It is off by default; TLS certificate verification stays on.
 
 
 ## Installation actions
@@ -72,7 +75,7 @@ The installer saves no sandbox backend. After signing in, open **System** → **
 
 The default installation publishes Web on `--web-port` (8080) at `--host 0.0.0.0`. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL stays private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
 
-`--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Set it to the HTTPS origin your reverse proxy serves.
+`--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Set it to the HTTPS origin your reverse proxy serves. A non-loopback `http://` origin needs `--allow-insecure-origin`; a loopback one does not.
 
 ### Ports
 

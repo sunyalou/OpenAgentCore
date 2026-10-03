@@ -64,7 +64,23 @@ class InstallScriptTests(unittest.TestCase):
     def test_help_does_not_need_docker(self):
         help_text = subprocess.run(["bash", str(INSTALL), "--help"], capture_output=True, text=True, check=True)
         self.assertIn("--web-port", help_text.stdout)
+        self.assertIn("--allow-insecure-origin", help_text.stdout)
         self.assertNotIn("--external-proxy", help_text.stdout)
+
+    def test_allow_insecure_origin_is_written_only_when_requested(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, _ = self.install(root, "--public-url", "http://10.0.0.5:8080", "--allow-insecure-origin")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            env = dict(line.split("=", 1) for line in (root / "oac/.env").read_text().splitlines())
+            self.assertEqual(env["OAC_PUBLIC_URL"], "http://10.0.0.5:8080")
+            self.assertEqual(env["OAC_ALLOW_INSECURE_ORIGIN"], "1")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, _ = self.install(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            env = dict(line.split("=", 1) for line in (root / "oac/.env").read_text().splitlines())
+            self.assertNotIn("OAC_ALLOW_INSECURE_ORIGIN", env)
 
     def write_executable(self, path, text):
         path.write_text(text)

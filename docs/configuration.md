@@ -6,7 +6,7 @@ Every setting of a Core installation has exactly one home. There are two kinds:
 
 | Kind | Examples | Home | Change it with | Takes effect |
 | --- | --- | --- | --- | --- |
-| [Process settings](#process-settings-configjson) | Public URL, ports, logging, harnesses, execution concurrency, audit retention, OAuth origins, Runtime history export | `.env` in the installation directory (default `~/.oac/core`) | Edit `.env`, then run `oac apply` | `oac apply` recreates the services that read the changed settings |
+| [Process settings](#process-settings-configjson) | Public URL, ports, logging, harnesses, execution concurrency, audit retention, OAuth origins, allow insecure origin, Runtime history export | `.env` in the installation directory (default `~/.oac/core`) | Edit `.env`, then run `oac apply` | `oac apply` recreates the services that read the changed settings |
 | [Runtime settings](#runtime-settings-web) | Sandbox backend and size, nodes, Projects and keys, default models, executor credentials | Core's PostgreSQL database | Web, or the Core API (`/core/v1`) with the Core key | Saved without a Core restart; nodes prepare Runtime changes asynchronously |
 
 Web's **System** page shows the installation's addresses, the default models, the sandbox configuration and, under **Startup settings**, the process settings Core loaded. Secrets live in [`data/secrets/`](#installation-directory), one copy each. No configuration file defines Projects or API keys.
@@ -31,6 +31,8 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 
 `OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. The installation serves Web over HTTP on `OAC_WEB_PORT`; your reverse proxy or hosting platform terminates HTTPS and routes to that port.
 
+A `http://` origin is accepted only for a loopback host. A development or test installation can set `OAC_ALLOW_INSECURE_ORIGIN=1` to accept a non-loopback one; TLS certificate verification stays on.
+
 To change it, point the reverse proxy at the new address first, then edit `OAC_PUBLIC_URL` and run `oac apply`. Afterwards:
 
 - Nodes on the old address get no new sandboxes: remove them in Web and add them again.
@@ -44,6 +46,7 @@ To change it, point the reverse proxy at the new address first, then edit `OAC_P
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
+| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing. TLS certificate verification stays on |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
@@ -150,7 +153,7 @@ Core reads only its environment. Compose interpolates `.env` into the service en
 | `OAC_CREDENTIAL_KEY_FILE` | `data/secrets/core/credential.key` |
 | `OAC_CORE_KEY_DIGESTS_FILE` | `data/secrets/core/core-key-digests.json`: a JSON array with the SHA-256 of the Core key |
 | `OAC_INSTALLATION_ID_FILE` | `data/secrets/core/installation.id`: the installation ID, a canonical UUID. It enables the sandbox deployment and node routes and requires `OAC_PUBLIC_URL` and `OAC_CORE_KEY_DIGESTS_FILE`. Core refuses an ID other than the one its database recorded |
-| `OAC_EXECUTION_CONCURRENCY`, `OAC_DEFAULT_HARNESS`, `OAC_HARNESSES`, `OAC_WRITE_AUDIT_RETENTION`, `OAC_OAUTH_TRUSTED_ORIGINS` | The matching [process settings](#settings). `oac-core check-config` validates them without starting Core |
+| `OAC_EXECUTION_CONCURRENCY`, `OAC_DEFAULT_HARNESS`, `OAC_HARNESSES`, `OAC_WRITE_AUDIT_RETENTION`, `OAC_OAUTH_TRUSTED_ORIGINS`, `OAC_ALLOW_INSECURE_ORIGIN` | The matching [process settings](#settings). `oac-core check-config` validates them without starting Core |
 | `OAC_HISTORY_SETTINGS_FILE` | Optional Runtime history file. Sensitive; the installation report says only whether it is set |
 | `OAC_LOG_LEVEL`, `OAC_LOG_FORMAT`, `OAC_LOG_ADD_SOURCE` | Logging; Web reads the same three |
 | `OAC_PROVIDER_ROOT` | Absolute adapter artifact root. The Core image sets `/opt/oac`. Each adapter owns its helper paths beneath this root |
