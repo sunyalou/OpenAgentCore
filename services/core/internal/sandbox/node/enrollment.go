@@ -35,7 +35,7 @@ func Enroll(ctx context.Context, coreURL, dir, token string, input EnrollmentReq
 	input.CoreURL = coreURL
 	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	// This also recovers a consumed registration whose success response was lost.
-	target, err := endpoint(coreURL, "/api/v1/sandbox-node/identity")
+	target, err := stored.coreEndpoint("/api/v1/sandbox-node/identity")
 	if err != nil {
 		return StoredIdentity{}, err
 	}
@@ -50,7 +50,7 @@ func Enroll(ctx context.Context, coreURL, dir, token string, input EnrollmentReq
 			return retainEnrollment(dir, stored, out)
 		}
 	}
-	target, err = endpoint(coreURL, "/api/v1/sandbox-node/enroll")
+	target, err = stored.coreEndpoint("/api/v1/sandbox-node/enroll")
 	if err != nil {
 		return StoredIdentity{}, err
 	}
@@ -121,7 +121,7 @@ func RefreshIdentity(ctx context.Context, dir string) (StoredIdentity, error) {
 	if err != nil {
 		return StoredIdentity{}, err
 	}
-	target, err := endpoint(stored.CoreURL, "/api/v1/sandbox-node/identity")
+	target, err := stored.coreEndpoint("/api/v1/sandbox-node/identity")
 	if err != nil {
 		return StoredIdentity{}, err
 	}

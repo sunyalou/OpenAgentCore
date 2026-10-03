@@ -55,6 +55,32 @@ class GenerationReviewRegressions(unittest.TestCase):
             self.assertFalse(path.with_suffix('.preparing').exists())
             self.assertTrue(node_generations.image_available(installer.private_json(path), installer))
 
+    def test_prepare_validates_retained_source_url_under_the_enrollment_policy(self):
+        case = self.fixture(test_node_install.NodeInstallTests)
+        case.payloads["runtime/seccomp.json"] = b"{}"
+        case.refresh_manifest()
+        case.install()
+        configuration = json.loads(case.configuration_response(None).read())
+        configuration["generation"] = 2
+        case.args.generation = 2
+        case.args.specification_digest = configuration["specification_digest"]
+        # A node enrolled with the switch may keep an http source_url in preparation.json.
+        (case.root / "preparation.json").write_text(json.dumps({"source_url": "http://private.example"}))
+        identity_path = case.root / "state/node/identity.json"
+        identity = installer.private_json(identity_path)
+        with mock.patch.object(installer.node_spec, "fetch", return_value=configuration):
+            with self.assertRaises(Exception) as strict:
+                node_generations.prepare(case.args, installer)
+        self.assertNotIsInstance(strict.exception, installer.RuntimeDownloadError)
+        self.assertIn("HTTPS", str(strict.exception))
+        # The policy recorded in the retained identity admits it; the next step is the download.
+        identity["allow_insecure_origin"] = True
+        identity_path.write_text(json.dumps(identity))
+        with mock.patch.object(installer.node_spec, "fetch", return_value=configuration), \
+                mock.patch.object(installer, "metadata", side_effect=installer.RuntimeDownloadError("origin accepted")):
+            with self.assertRaisesRegex(installer.RuntimeDownloadError, "origin accepted"):
+                node_generations.prepare(case.args, installer)
+
     def test_unresolved_import_remains_discoverable_and_collectible(self):
         case = self.fixture(test_node_install.NodeInstallTests)
         case.containerd = True

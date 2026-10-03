@@ -21,7 +21,7 @@ class ReadinessTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         self.args = argparse.Namespace(core_url="https://core.example", provider="docker",
-                                       installation_id="94be54a1-138c-4f30-bc87-b13686272dbe")
+                                       installation_id="94be54a1-138c-4f30-bc87-b13686272dbe", allow_insecure_origin=False)
         self.identity = {"node_id": "634d97be-e54d-40f0-9468-ae6b62be85bf", "installation_id": self.args.installation_id,
                          "provider": self.args.provider, "deployment_generation": 1, "specification_digest": "b" * 64}
         self.path = self.root / "state/node/identity.json"
@@ -83,6 +83,19 @@ class ReadinessTests(unittest.TestCase):
         with mock.patch.object(installer, "open_request", return_value=self.response(node_id="other", connected=True, provider_ready=True)):
             with self.assertRaisesRegex(installer.InstallError, "different node identity"):
                 installer.wait_ready(self.root, self.args)
+
+    def test_wait_ready_matches_the_retained_insecure_origin_policy(self):
+        # A command that asks for the relaxed policy must match the retained identity.
+        self.args.allow_insecure_origin = True
+        with mock.patch.object(installer, "open_request") as request:
+            with self.assertRaisesRegex(installer.InstallError, "identity differs"):
+                installer.wait_ready(self.root, self.args)
+            request.assert_not_called()
+        stored = json.loads(self.path.read_text())
+        stored["allow_insecure_origin"] = True
+        self.path.write_text(json.dumps(stored))
+        with mock.patch.object(installer, "open_request", return_value=self.response(connected=True, provider_ready=True)):
+            installer.wait_ready(self.root, self.args)
 
 
 class MetadataRetryTests(unittest.TestCase):

@@ -16,10 +16,11 @@ import (
 )
 
 type StoredIdentity struct {
-	Identity   Identity `json:"identity"`
-	Credential string   `json:"credential"`
-	CoreURL    string   `json:"core_url"`
-	OwnerEpoch uint64   `json:"owner_epoch"`
+	Identity            Identity `json:"identity"`
+	Credential          string   `json:"credential"`
+	CoreURL             string   `json:"core_url"`
+	OwnerEpoch          uint64   `json:"owner_epoch"`
+	AllowInsecureOrigin bool     `json:"allow_insecure_origin,omitempty"`
 }
 
 func lockDirectory(dir string) (func(), error) {
@@ -99,16 +100,16 @@ func writeIdentity(dir string, s StoredIdentity) error {
 
 // InitIdentity creates the credential before any enrollment request. A lost
 // enrollment response can therefore be recovered by authenticating this identity.
-func InitIdentity(dir, coreURL string, identity Identity) (StoredIdentity, error) {
+func InitIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bool) (StoredIdentity, error) {
 	release, err := lockDirectory(dir)
 	if err != nil {
 		return StoredIdentity{}, err
 	}
 	defer release()
-	return initIdentity(dir, coreURL, identity)
+	return initIdentity(dir, coreURL, identity, allowInsecureOrigin)
 }
-func initIdentity(dir, coreURL string, identity Identity) (StoredIdentity, error) {
-	if _, err := endpoint(coreURL, ""); err != nil {
+func initIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bool) (StoredIdentity, error) {
+	if _, err := validateEndpoint(coreURL, "", allowInsecureOrigin); err != nil {
 		return StoredIdentity{}, err
 	}
 	stored, err := readIdentity(dir)
@@ -117,7 +118,7 @@ func initIdentity(dir, coreURL string, identity Identity) (StoredIdentity, error
 		if expected.NodeID == "" {
 			expected.NodeID = stored.Identity.NodeID
 		}
-		if !sameBackend(stored.Identity, expected) || stored.CoreURL != coreURL {
+		if !sameBackend(stored.Identity, expected) || stored.CoreURL != coreURL || stored.AllowInsecureOrigin != allowInsecureOrigin {
 			return StoredIdentity{}, errors.New("node configuration does not match its retained identity")
 		}
 		return stored, nil
@@ -135,7 +136,7 @@ func initIdentity(dir, coreURL string, identity Identity) (StoredIdentity, error
 	if _, err = rand.Read(secret); err != nil {
 		return StoredIdentity{}, err
 	}
-	stored = StoredIdentity{Identity: identity, Credential: hex.EncodeToString(secret), CoreURL: coreURL}
+	stored = StoredIdentity{Identity: identity, Credential: hex.EncodeToString(secret), CoreURL: coreURL, AllowInsecureOrigin: allowInsecureOrigin}
 	if err = writeIdentity(dir, stored); err != nil {
 		return StoredIdentity{}, err
 	}
@@ -150,14 +151,38 @@ func LoadIdentity(dir string) (StoredIdentity, error) {
 	return readIdentity(dir)
 }
 
+// endpoint is the default Core origin contract: HTTPS, or plaintext HTTP only
+// for a loopback address.
 func endpoint(raw, path string) (string, error) {
+	return validateEndpoint(raw, path, false)
+}
+
+// endpointAllowingInsecureOrigin accepts a non-loopback plaintext HTTP origin. It
+// exists only for a node whose retained identity recorded that enrollment policy.
+func endpointAllowingInsecureOrigin(raw, path string) (string, error) {
+	return validateEndpoint(raw, path, true)
+}
+
+// coreEndpoint resolves the retained Core origin under the policy recorded when
+// the node was enrolled. The enrollment flag has exactly one home: identity.json.
+func (s StoredIdentity) coreEndpoint(path string) (string, error) {
+	if s.AllowInsecureOrigin {
+		return endpointAllowingInsecureOrigin(s.CoreURL, path)
+	}
+	return endpoint(s.CoreURL, path)
+}
+
+// validateEndpoint is the single origin rule. TLS certificate verification is
+// never relaxed here; allowInsecureOrigin only admits a plaintext HTTP scheme.
+func validateEndpoint(raw, path string, allowInsecureOrigin bool) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return "", errors.New("node Core URL must be an origin")
 	}
 	if u.Scheme != "https" {
 		ip := net.ParseIP(u.Hostname())
-		if u.Scheme != "http" || !(u.Hostname() == "localhost" || ip != nil && ip.IsLoopback()) {
+		loopback := u.Hostname() == "localhost" || ip != nil && ip.IsLoopback()
+		if u.Scheme != "http" || (!loopback && !allowInsecureOrigin) {
 			return "", errors.New("remote node Core URL requires HTTPS")
 		}
 	}
