@@ -48,3 +48,45 @@ func TestPublicURLMustBeACanonicalOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicURLDrivesInsecureWebSocketURL(t *testing.T) {
+	const insecure = "http://10.0.0.5:8080"
+	t.Setenv("OAC_PUBLIC_URL", insecure)
+	if _, err := processconfig.PublicURL(); err == nil {
+		t.Fatal("accepted a non-loopback HTTP origin with OAC_ALLOW_INSECURE_ORIGIN unset")
+	}
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "1")
+	public, err := processconfig.PublicURL()
+	if err != nil || public != insecure {
+		t.Fatalf("PublicURL() = %q, %v", public, err)
+	}
+	if ws, err := runtimeWebSocketURL(public); err != nil || ws != "ws://10.0.0.5:8080/api/v1/agent-daemon/ws" {
+		t.Fatalf("runtimeWebSocketURL(%q) = %q, %v", public, ws, err)
+	}
+}
+
+// installationFacts backs GET /core/v1/installation; the switch must reach the
+// settings snapshot the console reads.
+func TestInstallationFactsReportAllowInsecureOrigin(t *testing.T) {
+	t.Setenv("OAC_PUBLIC_URL", "http://10.0.0.5:8080")
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "1")
+	facts, err := installationFacts("http://10.0.0.5:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Configuration == nil {
+		t.Fatal("installation facts omitted the settings snapshot")
+	}
+	found := false
+	for _, setting := range facts.Configuration.Settings {
+		if setting.Key == "allow_insecure_origin" {
+			found = true
+			if setting.Value != true || setting.Default != false || setting.Sensitive {
+				t.Fatalf("allow_insecure_origin = %+v", setting)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("installation facts omitted allow_insecure_origin")
+	}
+}
