@@ -140,7 +140,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   // Expired only once a read begun after the expiry found no node for the command.
   const expired = lapsed && fresh && checked !== null && checked.startedAt >= expiresAt && checked.nodes === nodes;
   const command = enrollment && provider && available && publicUrl && (registered || !expired) && !ready
-    ? nodeInstallCommand({ token: enrollment.token, coreUrl: publicUrl, sourceUrl: publicUrl, provider, installationId: deployment.installation_id, scriptDigest: consoleConfig.node_installer_sha256 }) : "";
+    ? nodeInstallCommand({ token: enrollment.token, coreUrl: publicUrl, sourceUrl: publicUrl, provider, installationId: deployment.installation_id, scriptDigest: consoleConfig.node_installer_sha256, allowInsecureOrigin: insecure }) : "";
   const nodeId = node?.id ?? null;
   const polling = open && enrollment !== null && !ready && (registered || !expired);
   const check = useCallback(async () => {
