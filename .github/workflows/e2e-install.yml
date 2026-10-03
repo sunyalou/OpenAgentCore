@@ -1,0 +1,381 @@
+# Verbatim release-path end-to-end test (OAC-20).
+#
+# A GitHub-hosted runner installs a published release with the release's own
+# install.sh, then enrolls a Docker sandbox node with the command the Web
+# console generates. Manual-only: the console and the release assets are the
+# system under test, never this checkout.
+#
+# Coupling (R2): the node command is assembled in the browser by
+# apps/web/src/features/sandbox/enrollment-command.ts. No endpoint returns the
+# full command, so this workflow replicates
+# nodeInstallCommand(..., allowInsecureOrigin=true) against the documented
+# contract: the installer digest comes from /node-install/SHA256SUMS, the
+# one-time token from POST /core/v1/sandbox/enrollment-tokens, the installation
+# id from GET /core/v1/installation, and the six Runtime identities from
+# /node-install/manifest.json. Changing the Web command template requires
+# updating this workflow in the same change.
+name: e2e-install
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to install, e.g. build-<sha40>
+        required: true
+        type: string
+      expected_commit:
+        description: Commit the release must match; empty derives it from the tag
+        required: false
+        default: ''
+        type: string
+      web_port:
+        description: Host port that publishes the Web console
+        required: false
+        default: '8080'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-install-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: verbatim install and node enrollment
+    runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2204' }}
+    timeout-minutes: 90
+    env:
+      OAC_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Reserve disk space and prepare the workspace
+        run: |
+          set -euo pipefail
+          echo "OAC_WORK=$RUNNER_TEMP/oac-e2e" >> "$GITHUB_ENV"
+          echo "OAC_WEB_PORT=${{ inputs.web_port || '8080' }}" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/oac-e2e"
+          cat > "$RUNNER_TEMP/oac-e2e/evidence.sh" <<'SCRIPT'
+          # One labeled block (command, raw output, exit code) per check.
+          OAC_OUT=""
+          oac_evidence() {
+            local label="$1" code="$2" output="$3"
+            {
+              echo "### $label"
+              echo '```console'
+              printf '%s\n' "$output"
+              echo '```'
+              echo "exit code: $code"
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          oac_capture() {
+            local label="$1"; shift
+            local code
+            set +e
+            OAC_OUT="$("$@" 2>&1)"
+            code=$?
+            set -e
+            printf '%s\n' "$OAC_OUT"
+            oac_evidence "$label" "$code" "$OAC_OUT"
+            return "$code"
+          }
+          SCRIPT
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+          df -h /
+
+      - name: Resolve the release under test
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+          REQUESTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$OAC_REPOSITORY"
+          tag="$REQUESTED_TAG"
+          if [[ -z "$tag" ]]; then
+            tag="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$api/releases/latest" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          fi
+          # Fail before any download when the release lacks the installer or its digest.
+          curl -fsSL --retry 3 -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' "$api/releases/tags/$tag" \
+            | python3 -c 'import json,sys; names={a["name"] for a in json.load(sys.stdin).get("assets",[])}; missing={"install.sh","install.sh.sha256"}-names; sys.exit("release is missing "+", ".join(sorted(missing))) if missing else None'
+          # Resolve the commit the tag names: build-<sha40> carries it, any other
+          # tag is dereferenced (annotated tags peel to their commit).
+          if [[ "$tag" =~ ^build-([0-9a-f]{40})$ ]]; then
+            commit="${BASH_REMATCH[1]}"
+          else
+            remote="https://github.com/$OAC_REPOSITORY"
+            peeled="$(git ls-remote "$remote" "refs/tags/$tag^{}" | awk 'NR==1{print $1}')"
+            commit="${peeled:-$(git ls-remote "$remote" "refs/tags/$tag" | awk 'NR==1{print $1}')}"
+          fi
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Cannot resolve tag $tag to a commit." >&2
+            exit 1
+          fi
+          expected="${REQUESTED_COMMIT:-$commit}"
+          if [[ "$expected" != "$commit" ]]; then
+            echo "expected_commit $expected does not match tag $tag ($commit)." >&2
+            exit 1
+          fi
+          ip="$(ip route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)"
+          if [[ -z "$ip" ]]; then ip="$(hostname -I | awk '{print $1}')"; fi
+          if [[ -z "$ip" ]]; then echo "Cannot determine the runner address." >&2; exit 1; fi
+          public_url="http://$ip:$OAC_WEB_PORT"
+          {
+            echo "tag=$tag"
+            echo "commit=$expected"
+            echo "public_url=$public_url"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $tag -> $expected published at $public_url"
+
+      - name: Download and verify the release installer
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          base="https://github.com/$OAC_REPOSITORY/releases/download/$RELEASE_TAG"
+          oac_capture "GET $base/install.sh" curl -fsSL --retry 3 --retry-delay 5 "$base/install.sh" -o "$OAC_WORK/install.sh"
+          oac_capture "GET $base/install.sh.sha256" curl -fsSL --retry 3 --retry-delay 5 "$base/install.sh.sha256" -o "$OAC_WORK/install.sh.sha256"
+          verify_installer() { ( cd "$OAC_WORK" && sha256sum -c install.sh.sha256 ); }
+          oac_capture "sha256sum -c install.sh.sha256" verify_installer
+
+      - name: Run the release install.sh verbatim
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          PUBLIC_URL: ${{ steps.release.outputs.public_url }}
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          command="OAC_REPOSITORY=$OAC_REPOSITORY bash install.sh --version $RELEASE_TAG --public-url $PUBLIC_URL --web-port $OAC_WEB_PORT --allow-insecure-origin"
+          echo "\$ $command"
+          set +e
+          OAC_REPOSITORY="$OAC_REPOSITORY" bash "$OAC_WORK/install.sh" \
+            --version "$RELEASE_TAG" \
+            --public-url "$PUBLIC_URL" \
+            --web-port "$OAC_WEB_PORT" \
+            --allow-insecure-origin > "$OAC_WORK/install.log" 2>&1
+          code=$?
+          set -e
+          cat "$OAC_WORK/install.log"
+          oac_evidence "verbatim install.sh: $command" "$code" "$(cat "$OAC_WORK/install.log")"
+          exit "$code"
+
+      - name: Verify the installation is healthy
+        env:
+          PUBLIC_URL: ${{ steps.release.outputs.public_url }}
+          EXPECTED_COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          install_dir="$HOME/.oac/core"
+          core_key="$("$install_dir/oac" core-key --show)"
+          echo "::add-mask::$core_key"
+          echo "OAC_CORE_KEY=$core_key" >> "$GITHUB_ENV"
+          oac_capture "GET $PUBLIC_URL/healthz" curl -fsS "$PUBLIC_URL/healthz"
+          oac_capture "GET http://127.0.0.1:8091/core/v1/installation" curl -fsS -H "Authorization: Bearer $core_key" "http://127.0.0.1:8091/core/v1/installation"
+          printf '%s' "$OAC_OUT" | PUBLIC_URL="$PUBLIC_URL" EXPECTED_COMMIT="$EXPECTED_COMMIT" python3 -c '
+          import json, os, sys
+          facts = json.load(sys.stdin)
+          public_url = os.environ["PUBLIC_URL"]
+          expected = os.environ["EXPECTED_COMMIT"]
+          problems = []
+          actual_public = facts.get("public_url")
+          if actual_public != public_url:
+              problems.append("public_url %r != %r" % (actual_public, public_url))
+          actual_commit = facts.get("source_commit")
+          if actual_commit != expected:
+              problems.append("source_commit %r != %r" % (actual_commit, expected))
+          settings = {s["key"]: s.get("value") for s in (facts.get("configuration") or {}).get("settings", [])}
+          if settings.get("allow_insecure_origin") is not True:
+              problems.append("allow_insecure_origin is %r" % (settings.get("allow_insecure_origin"),))
+          if not facts.get("installation_id"):
+              problems.append("installation_id is missing")
+          if problems:
+              sys.exit("; ".join(problems))
+          print("public_url, source_commit, allow_insecure_origin and installation_id all match")
+          '
+
+      - name: Configure the Docker sandbox deployment
+        env:
+          PUBLIC_URL: ${{ steps.release.outputs.public_url }}
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          oac_capture "GET /core/v1/sandbox/deployment" curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/sandbox/deployment"
+          generation="$(printf '%s' "$OAC_OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])')"
+          # R2: the six Runtime identities are the release manifest's, exactly as
+          # the Web console reads them in deployment-specification.ts.
+          oac_capture "GET $PUBLIC_URL/node-install/manifest.json" curl -fsS "$PUBLIC_URL/node-install/manifest.json"
+          runtime="$(printf '%s' "$OAC_OUT" | python3 -c '
+          import json, sys
+          manifest = json.load(sys.stdin)
+          print(json.dumps({
+              "source_commit": manifest["source_commit"],
+              "image_id": manifest["images"]["runtime"],
+              "image_manifest_digest": manifest["image_manifest_digests"]["runtime"],
+              "microsandbox_ref": manifest["runtime_ref"],
+              "runtime_sha256": manifest["microsandbox"]["runtime_sha256"],
+              "firmware_sha256": manifest["microsandbox"]["firmware_sha256"],
+          }))
+          ')"
+          request="$(GENERATION="$generation" RUNTIME="$runtime" python3 -c '
+          import json, os
+          print(json.dumps({
+              "expected_generation": int(os.environ["GENERATION"]),
+              "provider": "docker",
+              "configuration": {},
+              "resources": {"cpus": 2, "memory_mib": 2048},
+              "runtime": json.loads(os.environ["RUNTIME"]),
+          }))
+          ')"
+          oac_capture "POST /core/v1/sandbox/deployment (provider docker)" curl -fsS -X POST -H "Authorization: Bearer $OAC_CORE_KEY" -H 'Content-Type: application/json' --data "$request" "http://127.0.0.1:8091/core/v1/sandbox/deployment"
+          printf '%s' "$OAC_OUT" | python3 -c '
+          import json, sys
+          view = json.load(sys.stdin)
+          if view.get("provider") != "docker" or not view.get("specification", {}).get("runtime"):
+              sys.exit("deployment was not saved as docker with a pinned runtime: %r" % (view,))
+          print("saved provider=%s generation=%s" % (view["provider"], view["generation"]))
+          '
+
+      - name: Enroll and install the node with the console command
+        env:
+          PUBLIC_URL: ${{ steps.release.outputs.public_url }}
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          # R2: the console must serve the three files the command consumes
+          # before anything runs.
+          for name in manifest.json SHA256SUMS node-install.pyz; do
+            oac_capture "HEAD $PUBLIC_URL/node-install/$name" curl -fsS -I "$PUBLIC_URL/node-install/$name"
+          done
+          oac_capture "GET $PUBLIC_URL/node-install/SHA256SUMS" curl -fsS "$PUBLIC_URL/node-install/SHA256SUMS"
+          digest="$(printf '%s' "$OAC_OUT" | awk '$2 == "node-install.pyz" { print $1 }')"
+          if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "SHA256SUMS has no digest for node-install.pyz." >&2
+            exit 1
+          fi
+          oac_capture "GET /core/v1/installation" curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/installation"
+          installation_id="$(printf '%s' "$OAC_OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["installation_id"])')"
+          echo "OAC_INSTALLATION_ID=$installation_id" >> "$GITHUB_ENV"
+          # The one-time token is generated here, immediately before the command
+          # runs, and never printed: only a masked copy reaches the summary.
+          set +e
+          token_response="$(curl -fsS -X POST -H "Authorization: Bearer $OAC_CORE_KEY" -H 'Content-Type: application/json' --data '{"max_active":2,"max_retained":8}' "http://127.0.0.1:8091/core/v1/sandbox/enrollment-tokens")"
+          code=$?
+          set -e
+          token="$(printf '%s' "$token_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+          enrollment_id="$(printf '%s' "$token_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["enrollment_id"])')"
+          if [[ -z "$token" || -z "$enrollment_id" ]]; then
+            echo "Core returned no enrollment token." >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "OAC_ENROLLMENT_ID=$enrollment_id" >> "$GITHUB_ENV"
+          oac_evidence "POST /core/v1/sandbox/enrollment-tokens" "$code" "$(printf '%s' "$token_response" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["token"]="<one-time enrollment token>"; print(json.dumps(d))')"
+          if [[ "$code" != 0 ]]; then exit "$code"; fi
+          # Replica of nodeInstallCommand(..., allowInsecureOrigin=true). The
+          # template below is byte-for-byte the Web one; keep them in step.
+          python3 - "$OAC_WORK/node-command.sh" "$token" "$PUBLIC_URL" "$PUBLIC_URL" "$installation_id" "$digest" <<'PY'
+          import sys
+
+          def quote(value):
+              return "'" + value.replace("'", "'\\''") + "'"
+
+          template = r""" (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
+          export http_proxy="${http_proxy-${HTTP_PROXY-}}" https_proxy="${https_proxy-${HTTPS_PROXY-}}" no_proxy="${no_proxy-${NO_PROXY-}}"
+          export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy" NO_PROXY="$no_proxy"
+          printf '\n==> Downloading node installer...\n' &&
+          curl -fs --max-time 30 --max-filesize 1048576 @@INSTALLER_URL@@ -o "$d/node-install.pyz" || { c=$?; printf 'Cannot download node installer; check the console URL, TLS and proxy settings.\n' >&2; exit "$c"; }
+          printf '==> Verifying node installer...\n' &&
+          printf '%s  %s\n' @@DIGEST@@ "$d/node-install.pyz" | sha256sum -c --status &&
+          printf '%s\n' @@TOKEN@@ | $s ${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --enrollment-token-stdin --source-url @@SOURCE_URL@@ --core-url @@CORE_URL@@ --allow-insecure-origin --provider @@PROVIDER@@ --installation-id @@INSTALLATION_ID@@)"""
+
+          def node_install_command(token, core_url, source_url, provider, installation_id, script_digest):
+              return (template
+                  .replace("@@INSTALLER_URL@@", quote(source_url + "/node-install/node-install.pyz"))
+                  .replace("@@DIGEST@@", quote(script_digest))
+                  .replace("@@TOKEN@@", quote(token))
+                  .replace("@@SOURCE_URL@@", quote(source_url))
+                  .replace("@@CORE_URL@@", quote(core_url))
+                  .replace("@@PROVIDER@@", quote(provider))
+                  .replace("@@INSTALLATION_ID@@", quote(installation_id)))
+
+          path, token, core_url, source_url, installation_id, digest = sys.argv[1:7]
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(node_install_command(token, core_url, source_url, "docker", installation_id, digest) + "\n")
+          with open(path + ".redacted", "w", encoding="utf-8") as handle:
+              handle.write(node_install_command("<one-time enrollment token>", core_url, source_url, "docker", installation_id, digest) + "\n")
+          PY
+          chmod 600 "$OAC_WORK/node-command.sh"
+          set +e
+          node_output="$(bash "$OAC_WORK/node-command.sh" 2>&1)"
+          code=$?
+          set -e
+          printf '%s\n' "$node_output"
+          oac_evidence "node install command (redacted)" 0 "$(cat "$OAC_WORK/node-command.sh.redacted")"
+          oac_evidence "node install output" "$code" "${node_output//$token/<one-time enrollment token>}"
+          rm -f "$OAC_WORK/node-command.sh" "$OAC_WORK/node-command.sh.redacted"
+          exit "$code"
+
+      - name: Verify the node is online, provider ready and rollout ready
+        run: |
+          set -euo pipefail
+          source "$OAC_WORK/evidence.sh"
+          deadline=$((SECONDS + 600))
+          ready=0
+          while (( SECONDS < deadline )); do
+            set +e
+            nodes="$(curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/sandbox/nodes")"
+            code=$?
+            set -e
+            if (( code == 0 )); then
+              set +e
+              state="$(printf '%s' "$nodes" | ENROLLMENT_ID="$OAC_ENROLLMENT_ID" python3 -c '
+          import json, os, sys
+          nodes = json.load(sys.stdin)["data"]
+          match = [n for n in nodes if n.get("enrollment_id") == os.environ["ENROLLMENT_ID"]]
+          if not match:
+              print("waiting for the enrolled node to appear")
+              sys.exit(1)
+          node = match[0]
+          rollout = node.get("rollout") or {}
+          print("online=%s provider_ready=%s rollout.state=%s last_seen_at=%s" % (node.get("online"), node.get("provider_ready"), rollout.get("state"), node.get("last_seen_at")))
+          sys.exit(0 if node.get("online") and node.get("provider_ready") and rollout.get("state") == "ready" else 1)
+          ')"
+              state_code=$?
+              set -e
+              printf '%s\n' "$state"
+              if (( state_code == 0 )); then ready=1; break; fi
+            else
+              echo "GET /core/v1/sandbox/nodes failed with $code; retrying"
+            fi
+            sleep 15
+          done
+          set +e
+          final="$(curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/sandbox/nodes")"
+          code=$?
+          set -e
+          oac_evidence "GET /core/v1/sandbox/nodes (final)" "$code" "$final"
+          if (( ready != 1 )); then
+            echo "The node did not reach online=true, provider_ready=true, rollout.state=ready." >&2
+            exit 1
+          fi
+          # WebSocket evidence: an established node connection on the console port.
+          show_connections() { sudo ss -tnp | grep -E ":$OAC_WEB_PORT\b" || true; }
+          oac_capture "sudo ss -tnp (connections to :$OAC_WEB_PORT)" show_connections
+          show_node_journal() { sudo journalctl -u "oac-node-$OAC_INSTALLATION_ID.service" --no-pager -n 40 || true; }
+          oac_capture "sudo journalctl -u oac-node-$OAC_INSTALLATION_ID.service" show_node_journal
+          # last_seen_at must advance between two reads, proving a live heartbeat.
+          oac_capture "GET /core/v1/sandbox/nodes (first read)" curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/sandbox/nodes"
+          first_seen="$(printf '%s' "$OAC_OUT" | ENROLLMENT_ID="$OAC_ENROLLMENT_ID" python3 -c 'import json,os,sys; print(next((n.get("last_seen_at") for n in json.load(sys.stdin)["data"] if n.get("enrollment_id")==os.environ["ENROLLMENT_ID"]), ""))')"
+          sleep 20
+          oac_capture "GET /core/v1/sandbox/nodes (second read)" curl -fsS -H "Authorization: Bearer $OAC_CORE_KEY" "http://127.0.0.1:8091/core/v1/sandbox/nodes"
+          second_seen="$(printf '%s' "$OAC_OUT" | ENROLLMENT_ID="$OAC_ENROLLMENT_ID" python3 -c 'import json,os,sys; print(next((n.get("last_seen_at") for n in json.load(sys.stdin)["data"] if n.get("enrollment_id")==os.environ["ENROLLMENT_ID"]), ""))')"
+          if [[ -z "$first_seen" || -z "$second_seen" || "$first_seen" == "$second_seen" ]]; then
+            echo "last_seen_at did not advance: $first_seen -> $second_seen" >&2
+            exit 1
+          fi
+          echo "last_seen_at advanced: $first_seen -> $second_seen"
