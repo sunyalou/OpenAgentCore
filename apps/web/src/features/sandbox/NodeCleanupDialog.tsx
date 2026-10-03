@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { Modal } from "../../components/Modal";
 import { installationQuery } from "../../lib/installation";
-import { nodeSourceUrl } from "./core-origin";
+import { allowsInsecureOrigin, nodeSourceUrl } from "./core-origin";
+import type { SandboxConsoleConfig } from "./console-config";
 import { nodeUninstallCommand } from "./enrollment-command";
 import { CommandBlock } from "./node-commands";
 
@@ -26,14 +27,17 @@ export interface NodeCleanup {
  * images. Like Add node's, the command downloads from the installation's public
  * URL, which the dialog reads (again, if it is not at hand): until it is read, if
  * the read fails (with Try again), or while other machines can't use it, the
- * dialog says so in place of the command. It never opens empty.
+ * dialog says so in place of the command. It never opens empty. With
+ * `allow_insecure_origin` on, a non-loopback plain-HTTP public URL is accepted,
+ * as it is for Add node.
  */
-export function NodeCleanupDialog({ cleanup, open, onClose }: { cleanup: NodeCleanup | null; open: boolean; onClose: () => void }) {
+export function NodeCleanupDialog({ cleanup, consoleConfig, open, onClose }: { cleanup: NodeCleanup | null; consoleConfig: SandboxConsoleConfig; open: boolean; onClose: () => void }) {
   const { t, i18n } = useTranslation("sandbox");
   // Sentences run on with a space in English and without one in Chinese.
   const join = (...sentences: string[]) => sentences.join(i18n.resolvedLanguage?.startsWith("zh") ? "" : " ");
   const installation = useQuery({ ...installationQuery, enabled: cleanup !== null });
-  const sourceUrl = installation.data ? nodeSourceUrl(installation.data) : null;
+  const allowInsecure = allowsInsecureOrigin(installation.data, consoleConfig);
+  const sourceUrl = installation.data ? nodeSourceUrl(installation.data, allowInsecure) : null;
   const command = (force = false) => cleanup && sourceUrl
     ? nodeUninstallCommand({ sourceUrl, installationId: cleanup.installationId, scriptDigest: cleanup.scriptDigest, force }) : "";
   const stays = cleanup ? t("{{name}} is removed from Core, but its service and files stay on the host.", { name: cleanup.name }) : "";
@@ -45,7 +49,9 @@ export function NodeCleanupDialog({ cleanup, open, onClose }: { cleanup: NodeCle
     </div> : cleanup && !sourceUrl ? <div className="sandbox-add-node form-stack">
       <p>{join(stays, installation.data?.local_only && installation.data.public_url
         ? t("Other machines can't reach this installation's public URL, {{url}}, so no uninstall command can be given.", { url: installation.data.public_url })
-        : t("An uninstall command needs an HTTPS public URL that other machines can reach, and this installation has none."))}</p>
+        : allowInsecure
+          ? t("An uninstall command needs a public URL that other machines can reach, and this installation has none.")
+          : t("An uninstall command needs an HTTPS public URL that other machines can reach, and this installation has none."))}</p>
     </div> : cleanup ? <div className="sandbox-add-node form-stack">
       <p>{t("{{name}} is removed from Core. To remove its service and files from the host, run:", { name: cleanup.name })}</p>
       <CommandBlock key={command()} value={command()} label={t("Uninstall command")} autoFocus />

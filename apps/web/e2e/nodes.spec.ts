@@ -189,6 +189,18 @@ test("removes a node after confirmation", async ({ page, request }) => {
   await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeFocused();
 });
 
+test("gives the host's uninstall command over a plain-HTTP public URL when allow_insecure_origin is on", async ({ page, request }) => {
+  await openConsole(page, request, "nodes", { installation: "insecure" });
+  await page.getByRole("button", { name: "Remove edge-03" }).click();
+  await page.getByRole("dialog", { name: "Remove node" }).getByRole("button", { name: "Confirm removal" }).click();
+  // The node Add node enrolled over http://IP:8080 is cleaned up over the same address, not blocked on HTTPS.
+  const cleanup = page.getByRole("dialog", { name: "Clean up the host" });
+  await expect(cleanup.getByLabel("Uninstall command", { exact: true })).toHaveValue(/'http:\/\/10\.0\.0\.5:8080\/node-install\/node-install\.pyz'/);
+  await expect(cleanup.getByText("An uninstall command needs an HTTPS public URL", { exact: false })).toHaveCount(0);
+  await cleanup.getByRole("button", { name: "Done" }).click();
+  await expect(cleanup).toBeHidden();
+});
+
 test("marks a node on an old Core address in its row, beside each node's limit", async ({ page, request }) => {
   await openConsole(page, request, "nodes", { installation: "stale" });
   const row = page.getByRole("row", { name: /core-01/ });

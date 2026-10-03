@@ -158,7 +158,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     <p>{t("{{name}} will be removed from this deployment.", { name: removeName })}</p>
     <p>{t("Core rejects removal while allocations or retained resources remain.")}</p>
   </ConfirmDialog>;
-  const cleanupDialog = <NodeCleanupDialog cleanup={cleanup?.node ?? null} open={cleanup?.open ?? false} onClose={() => {
+  const cleanupDialog = <NodeCleanupDialog cleanup={cleanup?.node ?? null} consoleConfig={consoleConfig} open={cleanup?.open ?? false} onClose={() => {
     setCleanup((current) => current && { ...current, open: false });
     // The removed node's button is gone, so focus returns to the page, after the dialog restores its own.
     window.requestAnimationFrame(() => heading.current?.focus());
