@@ -10,13 +10,17 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / "deploy/install.sh"
+CHECKSUM = "a" * 64
 
 
 class InstallScriptTests(unittest.TestCase):
-    def install(self, root, *args, compose_up=0, check_config=0, init=0):
+    def install(self, root, *args, compose_up=0, check_config=0, init=0, checksum=CHECKSUM, listed=None):
         bin_dir = root / "bin"
         bin_dir.mkdir(exist_ok=True)
         log = root / "docker.log"
+        if listed is None:
+            listed = {"compose.yaml": CHECKSUM, "ports.yaml": CHECKSUM}
+        checksums = "".join(f"{digest}  {name}\\n" for name, digest in listed.items())
         self.write_executable(bin_dir / "docker", textwrap.dedent(f"""\
             #!/bin/sh
             printf '%s\\n' "$*" >> {log}
@@ -36,16 +40,19 @@ class InstallScriptTests(unittest.TestCase):
             if [ "$1" = compose ] && [ "$2" = up ]; then exit {compose_up}; fi
             exit 0
             """))
-        self.write_executable(bin_dir / "curl", textwrap.dedent("""\
+        self.write_executable(bin_dir / "curl", textwrap.dedent(f"""\
             #!/bin/sh
             output=""
             while [ $# -gt 0 ]; do
               if [ "$1" = --output ]; then output="$2"; shift 2; continue; fi
               shift
             done
-            printf 'fixture\\n' > "$output"
+            case "$output" in
+              *compose-sha256sums.txt) printf '%b' '{checksums}' > "$output" ;;
+              *) printf 'fixture\\n' > "$output" ;;
+            esac
             """))
-        self.write_executable(bin_dir / "sha256sum", "#!/bin/sh\nexit 0\n")
+        self.write_executable(bin_dir / "sha256sum", f'#!/bin/sh\ncase "$1" in --*) echo "sha256sum: unrecognized option: $1" >&2; exit 1 ;; esac\nprintf \'%s  %s\\n\' {checksum} "$1"\n')
         self.write_executable(bin_dir / "ss", "#!/bin/sh\nexit 0\n")
         env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], HOME=str(root))
         completed = subprocess.run(["bash", str(INSTALL), "--install-dir", str(root / "oac"), *args],
@@ -113,6 +120,33 @@ class InstallScriptTests(unittest.TestCase):
             self.assertEqual(env["COMPOSE_FILE"], "compose.yaml:ports.yaml")
             self.assertEqual(env["OAC_PUBLIC_URL"], "https://core.example")
             self.assertEqual(sorted(env), ["COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "OAC_HOST", "OAC_INSTALL_DIR", "OAC_PUBLIC_URL", "OAC_WEB_PORT"])
+
+    def test_a_checksum_mismatch_stops_before_the_stack_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, recorded = self.install(root, checksum="b" * 64)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("compose.yaml: FAILED", completed.stderr)
+            self.assertNotIn("OpenAgentCore is running.", completed.stdout)
+            self.assertNotIn("compose up -d --wait", recorded)
+            self.assertFalse((root / "oac").exists(), "a failed checksum must remove the directory")
+
+    def test_a_missing_checksum_entry_stops_the_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, recorded = self.install(root, listed={"compose.yaml": CHECKSUM})
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("No valid checksum for ports.yaml", completed.stderr)
+            self.assertNotIn("compose up -d --wait", recorded)
+            self.assertFalse((root / "oac").exists())
+
+    def test_checksum_entries_for_other_release_files_are_ignored(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            listed = {"compose.yaml": CHECKSUM, "ports.yaml": CHECKSUM, "https.yaml": CHECKSUM}
+            completed, _ = self.install(root, listed=listed)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("OpenAgentCore is running.", completed.stdout)
 
     def test_help_does_not_need_docker(self):
         help_text = subprocess.run(["bash", str(INSTALL), "--help"], capture_output=True, text=True, check=True)

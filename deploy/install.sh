@@ -85,11 +85,33 @@ trap cleanup EXIT
 mkdir -p "$install_dir"
 chmod 700 "$install_dir"
 files=(compose.yaml ports.yaml)
+
+# CentOS 7 ships coreutils 8.22, which predates `sha256sum --ignore-missing`
+# (8.25). Compare each downloaded file with its listed digest directly.
+verify_sha256() {
+  local list="$1" name="$2" expected actual
+  expected="$(awk -v target="$name" '{ file = $2; sub(/^\*/, "", file); sub(/\r$/, "", file) } file == target { print $1 }' "$list")"
+  if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "No valid checksum for $name in $list." >&2
+    return 1
+  fi
+  actual="$(sha256sum "$name" | awk '{ print $1 }')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$name: FAILED" >&2
+    return 1
+  fi
+}
+
 curl --fail --silent --show-error --location "$asset_base/compose-sha256sums.txt" --output "$install_dir/compose-sha256sums.txt"
 for name in "${files[@]}"; do
   curl --fail --silent --show-error --location "$asset_base/$name" --output "$install_dir/$name"
 done
-(cd "$install_dir" && sha256sum --check --ignore-missing --quiet compose-sha256sums.txt)
+(
+  cd "$install_dir"
+  for name in "${files[@]}"; do
+    verify_sha256 compose-sha256sums.txt "$name"
+  done
+)
 
 compose_file="$(IFS=:; echo "${files[*]}")"
 umask 077
