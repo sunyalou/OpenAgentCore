@@ -29,13 +29,19 @@ const manifest = { platform: "linux/amd64", source_commit: release.source_commit
 /**
  * config.json's public_url. "public": an HTTPS address, so applications get an API base URL;
  * "local": the installer's loopback default, reachable only on the Core machine;
- * "stale": public, with a node still enrolled with an earlier address.
+ * "stale": public, with a node still enrolled with an earlier address;
+ * "http": a non-loopback HTTP address with allow_insecure_origin off;
+ * "insecure": the same address with allow_insecure_origin on.
  */
 const PUBLIC_URL = "https://core.example.com";
 const LOCAL_URL = "http://127.0.0.1:8091";
+/** A non-loopback HTTP address a development installation with allow_insecure_origin may use. */
+const INSECURE_URL = "http://10.0.0.5:8080";
 /** The address a node enrolled with before public_url last changed. */
 const OLD_URL = "https://core-old.example.com";
-const publicUrl = () => (state.installation === "local" ? LOCAL_URL : PUBLIC_URL);
+/** "insecure" and "http" share the plain-HTTP address; only "insecure" turns the switch on. */
+const httpAddress = () => state.installation === "insecure" || state.installation === "http";
+const publicUrl = () => (state.installation === "local" ? LOCAL_URL : httpAddress() ? INSECURE_URL : PUBLIC_URL);
 /** The digest the console reports for its self-hosted executor installer; the same value as in monitoring.spec.ts. */
 /** Core reports one installation ID, a canonical UUID, in the installation and the deployment. */
 const INSTALLATION_ID = "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f";
@@ -54,6 +60,7 @@ function installation() {
       path: "/opt/oac/config.json", apply_command: "sudo oac apply", applied_at: "2026-09-24T09:30:00Z",
       settings: [
         setting("public_url", publicUrl(), LOCAL_URL, ["core", "web"]),
+        setting("allow_insecure_origin", state.installation === "insecure", false, ["core"]),
         setting("listen_address", "127.0.0.1:8091", "127.0.0.1:8091", ["core"]),
         setting("web_listen_address", "127.0.0.1:4173", "127.0.0.1:4173", ["web"]),
         setting("data_dir", "/var/lib/oac", "/var/lib/oac", [], { changeable: false }),
@@ -97,7 +104,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
   // Self-hosted Sessions get their remote_url from public_url, as in Core.
   const screenshots = process.env.OAC_WEB_SCREENSHOT_DEMO === "1";
   const now = Math.floor(Date.now() / 1000);
-  const base = (screenshots ? buildScreenshotDemo : buildDemo)(now, address === "local" ? LOCAL_URL : PUBLIC_URL);
+  const base = (screenshots ? buildScreenshotDemo : buildDemo)(now, address === "local" ? LOCAL_URL : address === "insecure" || address === "http" ? INSECURE_URL : PUBLIC_URL);
   const resources = buildResources(now, base.agents, base.sessions);
   const admin = buildAdmin(now, base, resources);
   // A fresh install: no project, Session or Runtime yet; Getting started leads.
@@ -111,7 +118,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     violations: [], writes: [], failNext: null, nextId: 1,
     // Executor credential metadata by environment ID; tokens are never kept.
     executorCredentials: new Map(),
-    // How config.json's public_url is set: "public", "local" or "stale".
+    // How config.json's public_url is set: "public", "local", "stale", "http" or "insecure".
     installation: address,
     // "none": Core has no credential encryption key, so it cannot store a provider's key.
     credentialKey: credentials !== "none",

@@ -11,14 +11,16 @@ export const FIXTURE_CORE_KEY = "fixture-core-key-3f9a2c71";
  * Fixture state options: `fresh` is a new install (no project, Session or Runtime),
  * `sandbox` the sandbox deployment, `nodes: "none"` a deployment no node has joined, and
  * `installation` how config.json's public_url is set: "public" (HTTPS, the default), "local"
- * (loopback: only the Core machine reaches the API, and E2B is rejected) or "stale" (public,
- * with a node enrolled with an earlier address), `credentials: "none"` a Core without a
+ * (loopback: only the Core machine reaches the API, and E2B is rejected), "stale" (public,
+ * with a node enrolled with an earlier address), "http" (a non-loopback HTTP address with
+ * allow_insecure_origin off) or "insecure" (the same address with allow_insecure_origin on),
+ * `credentials: "none"` a Core without a
  * credential encryption key, which cannot store a model provider's key, and
  * `installers: "none"` a console without its node installation payload, so it serves neither
  * the node nor the self-hosted installer. `nodeArtifacts` lists the providers the console has
  * node files for, both by default; as in the console, microsandbox needs Docker's files too.
  */
-export interface FixtureOptions { fresh?: boolean; sandbox?: "configured" | "none" | "e2b"; nodes?: "none"; installation?: "public" | "local" | "stale"; credentials?: "none"; installers?: "none"; nodeArtifacts?: ("docker" | "microsandbox")[] }
+export interface FixtureOptions { fresh?: boolean; sandbox?: "configured" | "none" | "e2b"; nodes?: "none"; installation?: "public" | "local" | "stale" | "http" | "insecure"; credentials?: "none"; installers?: "none"; nodeArtifacts?: ("docker" | "microsandbox")[] }
 
 /** Fresh fixture state: signed out ("login") or already signed in ("authenticated"). */
 export async function resetFixture(request: APIRequestContext, auth: "login" | "authenticated" = "authenticated", options: FixtureOptions = {}) {

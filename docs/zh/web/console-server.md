@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: b0302f0cf27ccd116c4bbb9477d5853f4ae1bf6cea34c9a4e21af72d25656557
+source_hash: d001ce8017ed156adfde905d996c97e6878891f827227295e74b6bd40289c98b
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器经控制台到达 Core，控制台原样转发 `/v1`、`/api/v1` 和 `/docs`。
@@ -100,7 +100,7 @@ flowchart LR
 
 ## 公开地址 {#public-address}
 
-控制台不配置域名，也不申请证书。运维人员的反向代理或托管平台终止 HTTPS 并把流量转到控制台，`OAC_PUBLIC_URL` 记录应用、节点和执行器使用的源地址。控制台只接受 `OAC_WEB_ORIGIN` 的主机，因此 DNS 重绑定不能访问它。
+控制台不配置域名，也不申请证书。运维人员的反向代理或托管平台终止 HTTPS 并把流量转到控制台，`OAC_PUBLIC_URL` 记录应用、节点和执行器使用的源地址。控制台只接受 `OAC_WEB_ORIGIN` 的主机，因此 DNS 重绑定不能访问它。使用 `OAC_ALLOW_INSECURE_ORIGIN=1` 的开发安装可以记录非回环的 `http://` 源地址；此时 Add node 与主机清理会提供明文 HTTP 命令，Add node 会警告注册令牌与节点凭据将以明文传输。
 
 ## 验证 {#verification}
 

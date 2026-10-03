@@ -98,7 +98,7 @@ With `OAC_WEB_NODE_PAYLOAD_DIR` set, the console serves the matched distribution
 
 ## Public address
 
-The console does not configure a domain or obtain certificates. The operator's reverse proxy or hosting platform terminates HTTPS and routes to the console, and `OAC_PUBLIC_URL` records the origin that applications, nodes and executors use. The console accepts only the host of `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach it.
+The console does not configure a domain or obtain certificates. The operator's reverse proxy or hosting platform terminates HTTPS and routes to the console, and `OAC_PUBLIC_URL` records the origin that applications, nodes and executors use. The console accepts only the host of `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach it. A development installation with `OAC_ALLOW_INSECURE_ORIGIN=1` may record a non-loopback `http://` origin; Add node and the host cleanup then offer plain-HTTP commands, and Add node warns that the enrollment token and the node's credentials travel unencrypted.
 
 ## Verification
 

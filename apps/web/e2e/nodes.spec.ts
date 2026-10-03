@@ -146,6 +146,34 @@ test("issues no command before the installation is read, for a loopback public U
   await expect(add.getByRole("button", { name: "Generate command" })).toBeVisible();
 });
 
+test("offers a plaintext HTTP node command with a warning only when allow_insecure_origin is on", async ({ page, request }) => {
+  // The switch is off by default: a non-loopback HTTP public URL still blocks Add node.
+  await openConsole(page, request, "nodes", { installation: "http" });
+  await page.getByRole("button", { name: "Add node" }).click();
+  const blocked = page.getByRole("dialog", { name: "Add node" });
+  await expect(blocked.getByRole("status")).toHaveText("Set a public HTTPS address before adding nodes.");
+  await expect(blocked.getByRole("button", { name: "Generate command" })).toHaveCount(0);
+  await expect(blocked.getByText(/Plaintext HTTP/)).toHaveCount(0);
+  // Close before reopening: the next openConsole keeps the same #nodes hash, so the page does
+  // not reload and a leftover overlay would intercept the next click.
+  await blocked.getByRole("button", { name: "Close dialog" }).click();
+  await expect(blocked).toBeHidden();
+
+  // With the switch on, the command downloads from and names the plain-HTTP public URL, and the dialog warns.
+  await openConsole(page, request, "nodes", { installation: "insecure" });
+  await page.getByRole("button", { name: "Add node" }).click();
+  const add = page.getByRole("dialog", { name: "Add node" });
+  await expect(add.getByRole("alert")).toContainText("Plaintext HTTP");
+  await expect(add.getByText("Reaches http://10.0.0.5:8080, as do its sandboxes")).toBeVisible();
+  await add.getByLabel("Sandboxes at once").fill("2");
+  const issued = page.waitForRequest((sent) => sent.method() === "POST" && sent.url().endsWith("/core/v1/sandbox/enrollment-tokens"));
+  await add.getByRole("button", { name: "Generate command" }).click();
+  await issued;
+  const field = add.getByLabel("One-time enrollment command", { exact: true });
+  await expect(field).toHaveValue(/curl [^\n]* 'http:\/\/10\.0\.0\.5:8080\/node-install\/node-install\.pyz' /);
+  await expect(field).toHaveValue(/ --source-url 'http:\/\/10\.0\.0\.5:8080' --core-url 'http:\/\/10\.0\.0\.5:8080' /);
+});
+
 test("removes a node after confirmation", async ({ page, request }) => {
   await openConsole(page, request, "nodes");
   await page.getByRole("button", { name: "Remove edge-03" }).click();
@@ -163,6 +191,18 @@ test("removes a node after confirmation", async ({ page, request }) => {
   await cleanup.getByRole("button", { name: "Done" }).click();
   await expect(cleanup).toBeHidden();
   await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeFocused();
+});
+
+test("gives the host's uninstall command over a plain-HTTP public URL when allow_insecure_origin is on", async ({ page, request }) => {
+  await openConsole(page, request, "nodes", { installation: "insecure" });
+  await page.getByRole("button", { name: "Remove edge-03" }).click();
+  await page.getByRole("dialog", { name: "Remove node" }).getByRole("button", { name: "Confirm removal" }).click();
+  // The node Add node enrolled over http://IP:8080 is cleaned up over the same address, not blocked on HTTPS.
+  const cleanup = page.getByRole("dialog", { name: "Clean up the host" });
+  await expect(cleanup.getByLabel("Uninstall command", { exact: true })).toHaveValue(/'http:\/\/10\.0\.0\.5:8080\/node-install\/node-install\.pyz'/);
+  await expect(cleanup.getByText("An uninstall command needs an HTTPS public URL", { exact: false })).toHaveCount(0);
+  await cleanup.getByRole("button", { name: "Done" }).click();
+  await expect(cleanup).toBeHidden();
 });
 
 test("marks a node on an old Core address in its row, beside each node's limit", async ({ page, request }) => {
