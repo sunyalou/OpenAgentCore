@@ -6,6 +6,12 @@ export interface SandboxConsoleConfig {
   node_installer: boolean;
   node_installer_sha256: string;
   /**
+   * The installation's `allow_insecure_origin` switch, as the console derives it
+   * from its environment. Absent when the console does not report it (an older
+   * console), which reads as off.
+   */
+  allow_insecure_origin?: boolean;
+  /**
    * The providers whose node files this console serves. Absent when the console
    * does not report them (an older console), which blocks nothing; a reported
    * null or malformed value reads as none.
@@ -34,6 +40,7 @@ export async function sandboxConsoleConfig(signal: AbortSignal): Promise<Sandbox
     sandbox_admin: config.sandbox_admin !== false,
     node_installer: config.node_installer === true && SHA256.test(config.node_installer_sha256 ?? ""),
     node_installer_sha256: config.node_installer_sha256 ?? "",
+    allow_insecure_origin: config.allow_insecure_origin === true,
     ...(config.node_artifacts === undefined ? {} : { node_artifacts: nodeArtifacts(config.node_artifacts) }),
   };
 }

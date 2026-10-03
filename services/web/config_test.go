@@ -49,3 +49,29 @@ func TestConfigRejectsUnsafeURLsAndSecretFiles(t *testing.T) {
 		t.Fatal("publicly readable secret accepted")
 	}
 }
+
+// OAC_ALLOW_INSECURE_ORIGIN is the installer's projection of config.json's
+// allow_insecure_origin; the console only reads it, and only 0 or 1 are valid.
+func TestConfigReadsAllowInsecureOrigin(t *testing.T) {
+	directory := t.TempDir()
+	key := filepath.Join(directory, "core.key")
+	if err := os.WriteFile(key, []byte(strings.Repeat("k", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OAC_WEB_CORE_KEY_FILE", key)
+	t.Setenv("OAC_WEB_ORIGIN", testOrigin)
+	t.Setenv("OAC_WEB_UPSTREAM", "http://core:8091")
+	t.Setenv("OAC_WEB_DIST", directory)
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "1")
+	if c, err := loadConfig(); err != nil || !c.allowInsecureOrigin {
+		t.Fatalf("allow_insecure_origin=1: %v, %v", c.allowInsecureOrigin, err)
+	}
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "0")
+	if c, err := loadConfig(); err != nil || c.allowInsecureOrigin {
+		t.Fatalf("allow_insecure_origin=0: %v, %v", c.allowInsecureOrigin, err)
+	}
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "yes")
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("invalid OAC_ALLOW_INSECURE_ORIGIN accepted")
+	}
+}

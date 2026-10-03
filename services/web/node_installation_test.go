@@ -100,3 +100,22 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 		t.Fatal("cross-origin setup reached Core")
 	}
 }
+
+// The console exposes the installer's allow_insecure_origin switch so Add node can
+// offer a plain-HTTP public URL. It is off unless OAC_ALLOW_INSECURE_ORIGIN is set.
+func TestConsoleConfigurationReportsAllowInsecureOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		allow bool
+		want  string
+	}{
+		{true, `"allow_insecure_origin":true`},
+		{false, `"allow_insecure_origin":false`},
+	} {
+		h := &console{config: config{allowInsecureOrigin: tc.allow}}
+		recorder := httptest.NewRecorder()
+		h.serveConsoleConfiguration(recorder, httptest.NewRequest(http.MethodGet, "/console/config", nil))
+		if !strings.Contains(recorder.Body.String(), tc.want) {
+			t.Fatalf("allow=%v body=%s", tc.allow, recorder.Body.String())
+		}
+	}
+}

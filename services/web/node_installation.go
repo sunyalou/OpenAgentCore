@@ -194,5 +194,6 @@ func (h *console) serveConsoleConfiguration(w http.ResponseWriter, _ *http.Reque
 		NodeInstaller       bool     `json:"node_installer"`
 		NodeInstallerSHA256 string   `json:"node_installer_sha256"`
 		NodeArtifacts       []string `json:"node_artifacts"`
-	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts()})
+		AllowInsecureOrigin bool     `json:"allow_insecure_origin"`
+	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts(), h.allowInsecureOrigin})
 }

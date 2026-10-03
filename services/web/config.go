@@ -17,6 +17,7 @@ type config struct {
 	upstream                *url.URL
 	installationSocket      string
 	bootstrap               bool
+	allowInsecureOrigin     bool
 }
 
 func loadConfig() (config, error) {
@@ -59,6 +60,13 @@ func loadConfig() (config, error) {
 	if c.bootstrap && (origin.Scheme != "http" || c.installationSocket == "") {
 		return config{}, errors.New("HTTP bootstrap requires installation management and an HTTP origin")
 	}
+	// The installer derives this from config.json's allow_insecure_origin; it lets Add node
+	// offer a plain-HTTP public URL. It is a projection, never a second setting.
+	allowInsecureOrigin := envDefault("OAC_ALLOW_INSECURE_ORIGIN", "0")
+	if allowInsecureOrigin != "0" && allowInsecureOrigin != "1" {
+		return config{}, errors.New("OAC_ALLOW_INSECURE_ORIGIN must be 0 or 1")
+	}
+	c.allowInsecureOrigin = allowInsecureOrigin == "1"
 	return c, nil
 }
 

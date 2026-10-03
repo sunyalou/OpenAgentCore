@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 745ee484725bf07d2f56300d36f2ff41f0fbbe2c3aaafd63af083f502c1f44f0
+source_hash: 58aeeb655c8cbadd60410d6de8a8bef6a4acf4e7503789580e18371a5f6acdbd
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器直接调用 Core；控制台不转发这些流量。
@@ -94,6 +94,7 @@ flowchart LR
 | `node_installer` | 控制台是否提供节点安装文件 |
 | `node_installer_sha256` | 文件中 `node-install.pyz` 的 SHA-256；Add node 命令执行安装程序前验证它 |
 | `node_artifacts` | 文件中包含节点资产的提供商（`docker`、`microsandbox`），资产在本地或通过固定发行下载提供。每次请求都读取，因此重新运行安装程序新增的资产无需重启即可出现 |
+| `allow_insecure_origin` | 该安装是否允许非回环的 HTTP 公开 URL：`config.json` 的 `allow_insecure_origin`，派生为 `OAC_ALLOW_INSECURE_ORIGIN`。开启后 Add node 会提供明文 HTTP 命令，并警告凭据会以明文传输；默认关闭 |
 
 ## 节点安装文件 {#node-installation-payload}
 

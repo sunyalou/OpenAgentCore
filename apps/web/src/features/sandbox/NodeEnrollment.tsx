@@ -13,7 +13,7 @@ import { sandboxDiagnosticMessage } from "../../lib/sandbox-diagnostic";
 import { sandboxRequestError } from "../../lib/sandbox-labels";
 import { checklistOpenFor, modelStep, nextStepAfterNode } from "../overview/getting-started";
 import { harnessesQuery } from "../system/harness-queries";
-import { nodeSourceUrl } from "./core-origin";
+import { allowsInsecureOrigin, nodeSourceUrl } from "./core-origin";
 import { nodeFilesAvailable, type SandboxConsoleConfig } from "./console-config";
 import { nodeInstallCommand, nodeLogCommand } from "./enrollment-command";
 import { CommandBlock, CopyCommand, HostRequirements } from "./node-commands";
@@ -89,7 +89,10 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const request = useRef<AbortController | null>(null);
   // Nodes download from, and reach Core at, the public URL; the browser's address may be a tunnel or loopback.
   // The deployment's core_url is the same address, but the installation is read again on each opening, so a fix shows at once.
-  const publicUrl = installation.data ? nodeSourceUrl(installation.data) : null;
+  const allowInsecure = allowsInsecureOrigin(installation.data, consoleConfig);
+  const publicUrl = installation.data ? nodeSourceUrl(installation.data, allowInsecure) : null;
+  // The node commands use plain HTTP only when the development switch is on; say so where they appear.
+  const insecure = allowInsecure && publicUrl !== null && publicUrl.startsWith("http://");
   const available = consoleConfig.node_installer;
   const provider = deployment.provider === "docker" || deployment.provider === "microsandbox" ? deployment.provider : null;
   const backend = provider === "microsandbox" ? "microsandbox" : "Docker";
@@ -265,6 +268,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
     : sandboxDiagnosticMessage(progress.problem, locale);
   return createPortal(<Modal open={open} title={t("Add node")} onClose={close} footer={footer}>
     <div className="sandbox-add-node form-stack">
+      {insecure ? <p className="sandbox-insecure-origin" role="alert">{t("Plaintext HTTP: allow_insecure_origin is on, so the enrollment token and the node's credentials travel unencrypted. Use this only on a trusted network.")}</p> : null}
       {!available ? <p role="status">{t("This console serves no node installer. For a console deployed by hand, point OAC_WEB_NODE_PAYLOAD_DIR at the distribution's node payload and restart it.")}</p>
       : !enrollment && blocker ? blocker.failed
         ? <p role="alert">{blocker.text} <button className="text-action" type="button" disabled={installation.isFetching} onClick={() => void installation.refetch()}>{t("Try again")}</button></p>

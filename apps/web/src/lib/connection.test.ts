@@ -21,6 +21,15 @@ describe("Core URL checks", () => {
   it.each([
     "http://core.example/v1",
     "http://192.168.1.20:8091/v1",
+    "http://10.0.0.5:8080",
+  ])("allows a non-loopback HTTP direct Core URL only with allow_insecure_origin: %s", (baseUrl) => {
+    expect(isValidDirectCoreBaseUrl(baseUrl)).toBe(false);
+    expect(isValidDirectCoreBaseUrl(baseUrl, true)).toBe(true);
+  });
+
+  it.each([
+    "http://core.example/v1",
+    "http://192.168.1.20:8091/v1",
     "http://localhost.example/v1",
     "http://127.0.0.1.example/v1",
     "http://127.0.0.1%2eexample/v1",
@@ -37,5 +46,14 @@ describe("Core URL checks", () => {
     "https://core.example/v1#secret",
   ])("rejects an unsafe direct Core URL: %s", (baseUrl) => {
     expect(isValidDirectCoreBaseUrl(baseUrl)).toBe(false);
+  });
+
+  it.each([
+    "https://user:secret@core.example/v1",
+    "https://core.example/v1?token=secret",
+    "ftp://core.example/v1",
+    "https://core.example/v1#secret",
+  ])("still rejects an unsafe direct Core URL with allow_insecure_origin: %s", (baseUrl) => {
+    expect(isValidDirectCoreBaseUrl(baseUrl, true)).toBe(false);
   });
 });

@@ -92,6 +92,7 @@ Sign-in errors: 400 for a malformed body, 401 `Invalid Core key`, 405 for a meth
 | `node_installer` | Whether the console serves a node installation payload |
 | `node_installer_sha256` | SHA-256 of that payload's `node-install.pyz`; Add node commands verify it before running the installer |
 | `node_artifacts` | The providers (`docker`, `microsandbox`) whose node artifacts the payload holds, locally or as a pinned release download. Read on every request, so artifacts added by rerunning the installer appear without a restart |
+| `allow_insecure_origin` | Whether the installation allows a non-loopback HTTP public URL: `config.json`'s `allow_insecure_origin`, derived as `OAC_ALLOW_INSECURE_ORIGIN`. Add node then offers a plain-HTTP command and warns that credentials travel unencrypted; off by default |
 
 ## Node installation payload
 

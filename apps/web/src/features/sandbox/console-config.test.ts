@@ -7,8 +7,18 @@ describe("bundled console capabilities", () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ node_installer: true, node_installer_sha256: "a".repeat(64) })));
     vi.stubGlobal("fetch", fetch);
     const controller = new AbortController();
-    expect(await sandboxConsoleConfig(controller.signal)).toEqual({ sandbox_admin: true, node_installer: true, node_installer_sha256: "a".repeat(64) });
+    expect(await sandboxConsoleConfig(controller.signal)).toEqual({ sandbox_admin: true, node_installer: true, node_installer_sha256: "a".repeat(64), allow_insecure_origin: false });
     expect(fetch).toHaveBeenCalledWith("/console/config", { credentials: "include", signal: controller.signal });
+  });
+  it("reports the derived allow_insecure_origin switch", async () => {
+    const read = async (body: object) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+      return (await sandboxConsoleConfig(new AbortController().signal))!;
+    };
+    expect((await read({ allow_insecure_origin: true })).allow_insecure_origin).toBe(true);
+    expect((await read({})).allow_insecure_origin).toBe(false);
+    // Only a literal true turns it on; any other value reads as off.
+    expect((await read({ allow_insecure_origin: "true" })).allow_insecure_origin).toBe(false);
   });
   it.each([{}, { sandbox_admin: "true", node_installer: true }, { sandbox_admin: false, node_installer: true, node_installer_sha256: "bad" }])("does not enable installation without a verified digest %j", async (body) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));

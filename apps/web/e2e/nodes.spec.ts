@@ -146,6 +146,30 @@ test("issues no command before the installation is read, for a loopback public U
   await expect(add.getByRole("button", { name: "Generate command" })).toBeVisible();
 });
 
+test("offers a plaintext HTTP node command with a warning only when allow_insecure_origin is on", async ({ page, request }) => {
+  // The switch is off by default: a non-loopback HTTP public URL still blocks Add node.
+  await openConsole(page, request, "nodes", { installation: "http" });
+  await page.getByRole("button", { name: "Add node" }).click();
+  const blocked = page.getByRole("dialog", { name: "Add node" });
+  await expect(blocked.getByRole("status")).toHaveText("Configure a domain and HTTPS in System before adding nodes.");
+  await expect(blocked.getByRole("button", { name: "Generate command" })).toHaveCount(0);
+  await expect(blocked.getByText(/Plaintext HTTP/)).toHaveCount(0);
+
+  // With the switch on, the command downloads from and names the plain-HTTP public URL, and the dialog warns.
+  await openConsole(page, request, "nodes", { installation: "insecure" });
+  await page.getByRole("button", { name: "Add node" }).click();
+  const add = page.getByRole("dialog", { name: "Add node" });
+  await expect(add.getByRole("alert")).toContainText("Plaintext HTTP");
+  await expect(add.getByText("Reaches http://10.0.0.5:8080, as do its sandboxes")).toBeVisible();
+  await add.getByLabel("Sandboxes at once").fill("2");
+  const issued = page.waitForRequest((sent) => sent.method() === "POST" && sent.url().endsWith("/core/v1/sandbox/enrollment-tokens"));
+  await add.getByRole("button", { name: "Generate command" }).click();
+  await issued;
+  const field = add.getByLabel("One-time enrollment command", { exact: true });
+  await expect(field).toHaveValue(/curl [^\n]* 'http:\/\/10\.0\.0\.5:8080\/node-install\/node-install\.pyz' /);
+  await expect(field).toHaveValue(/ --source-url 'http:\/\/10\.0\.0\.5:8080' --core-url 'http:\/\/10\.0\.0\.5:8080' /);
+});
+
 test("removes a node after confirmation", async ({ page, request }) => {
   await openConsole(page, request, "nodes");
   await page.getByRole("button", { name: "Remove edge-03" }).click();
