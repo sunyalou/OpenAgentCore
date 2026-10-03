@@ -52,11 +52,19 @@ func refreshIdentity(t *testing.T, coreURL string) error {
 		t.Fatal(err)
 	}
 	identity := node.Identity{InstallationID: uuid.NewString(), Provider: "docker", BackendFingerprint: strings.Repeat("1", 64)}
-	if _, err := node.InitIdentity(dir, coreURL, identity); err != nil {
+	if _, err := node.InitIdentity(dir, coreURL, identity, false); err != nil {
 		t.Fatal(err)
 	}
 	_, err := node.RefreshIdentity(t.Context(), dir)
 	return err
+}
+
+func TestRunRejectsTheEnrollmentOnlyOriginFlag(t *testing.T) {
+	// run never chooses a policy: it uses the one retained at registration.
+	err := run(t.Context(), []string{"run", "--config", "/missing/provider.json", "--state-dir", "/missing/state", "--allow-insecure-origin"})
+	if err == nil || !strings.Contains(err.Error(), "--allow-insecure-origin applies only to register") {
+		t.Fatalf("run accepted the register-only flag: %v", err)
+	}
 }
 
 func TestProtocolVersionRequiresNoProviderOrIdentity(t *testing.T) {

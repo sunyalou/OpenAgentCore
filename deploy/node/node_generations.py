@@ -398,7 +398,9 @@ def prepare(args, installer):
                     break
         if not finalized or value is None or not image_available(value, installer):
             settings = installer.private_json(root / "preparation.json")
-            args.source_url = installer.origin(settings["source_url"])
+            # The retained identity records the enrollment policy; a node enrolled
+            # with allow_insecure_origin may keep an http source_url in preparation.json.
+            args.source_url = installer.origin(settings["source_url"], bool(identity.get("allow_insecure_origin", False)))
             args.bundle = None
             manifest, sums = installer.metadata(args.source_url, prefix="releases/" + runtime["source_commit"] + "/")
             try:

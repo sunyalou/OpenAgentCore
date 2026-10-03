@@ -71,7 +71,7 @@ LOCK_WAIT_SECONDS = 600
 NOTHING_CHANGED = " Nothing was changed."
 
 
-def origin(value):
+def origin(value, allow_insecure_origin=False):
     try:
         parsed = urlsplit(value)
         parsed.port
@@ -84,7 +84,7 @@ def origin(value):
     if (parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username is not None
             or parsed.password is not None or parsed.path not in ("", "/")
             or any(c.isspace() for c in value) or any(c in value for c in "?#\\")
-            or (parsed.scheme == "http" and not local)):
+            or (parsed.scheme == "http" and not local and not allow_insecure_origin)):
         raise argparse.ArgumentTypeError("Use an HTTPS origin, or loopback HTTP for a local node")
     return value.rstrip("/")
 
@@ -397,6 +397,10 @@ def register_node(root, args, token, helper_archive=None):
     state = {"installation_id": args.installation_id, "provider": args.provider, "core_url": args.core_url,
              "source_commit": manifest["source_commit"], "generation": args.configuration["generation"],
              "specification_digest": args.configuration["specification_digest"]}
+    if args.allow_insecure_origin:
+        # Only an opted-in installation records the policy, so a default node's
+        # installation.json and registered.json stay byte-for-byte unchanged.
+        state["allow_insecure_origin"] = True
     write_once(root / "installation.json", json_text(state))
     node_generations.record_root_runtime(root, args, manifest, sums, sys.modules[__name__])
     for name in names:
@@ -437,10 +441,13 @@ def register_node(root, args, token, helper_archive=None):
             with os.fdopen(descriptor, "w") as secret:
                 secret.write(token)
             install_display.step("Registering this node with Core")
+            register = [str(root / provider_assets.artifacts(args.provider, ("node",))[0]), "register", "--config", str(root / "provider.json"),
+                        "--state-dir", str(root / "state/node"), "--core-url", args.core_url, "--name", socket.gethostname(),
+                        "--enrollment-token-file", secret_path]
+            if args.allow_insecure_origin:
+                register.append("--allow-insecure-origin")
             try:
-                checked([str(root / provider_assets.artifacts(args.provider, ("node",))[0]), "register", "--config", str(root / "provider.json"), "--state-dir", str(root / "state/node"),
-                         "--core-url", args.core_url, "--name", socket.gethostname(),
-                         "--enrollment-token-file", secret_path], REGISTRATION_UNCONFIRMED, explain=registration_failure)
+                checked(register, REGISTRATION_UNCONFIRMED, explain=registration_failure)
             except AddressChanged:
                 discard_unregistered(root)
                 raise
@@ -953,10 +960,10 @@ def system_unit(root, provider):
             + "\n\n[Install]\nWantedBy=multi-user.target\n")
 
 
-def recorded_origin(value, source):
+def recorded_origin(value, source, allow_insecure_origin=False):
     """A Core address read from a file, checked with the same rule as the command line."""
     try:
-        return origin(value)
+        return origin(value, allow_insecure_origin)
     except (argparse.ArgumentTypeError, TypeError, AttributeError):
         raise InstallError(source + " holds an invalid Core address; preserve it and inspect the host." + NOTHING_CHANGED) from None
 
@@ -970,7 +977,9 @@ def node_record(installation_id):
         if any(record.get(key) != value for key, value in expected.items()) or record.get("provider") not in DEVICE_GROUPS:
             raise InstallError(str(SYSTEM_RECORDS / (installation_id + ".json")) + " is not this installer's record; preserve "
                                "it and inspect the host." + NOTHING_CHANGED)
-        recorded_origin(record.get("core_url"), str(SYSTEM_RECORDS / (installation_id + ".json")))
+        # Validate the recorded address under the policy the record itself carries, so
+        # uninstall can read an http record without the original command's flag.
+        recorded_origin(record.get("core_url"), str(SYSTEM_RECORDS / (installation_id + ".json")), bool(record.get("allow_insecure_origin", False)))
     return record
 
 
@@ -990,6 +999,9 @@ def install_system(args, token):
         if record["core_url"] != args.core_url:
             raise InstallError("This host's node uses " + record["core_url"] + ", but this command uses " + args.core_url
                                + ". Remove the node on the Nodes page, uninstall it, then run a new command." + NOTHING_CHANGED)
+        if bool(record.get("allow_insecure_origin", False)) != args.allow_insecure_origin:
+            raise InstallError("This host's node was installed with a different insecure-origin policy; remove the node on "
+                               "the Nodes page, uninstall it, then run a new command." + NOTHING_CHANGED)
     install_display.step("Checking host requirements")
     group, details = provider_group(provider)
     if record is None:
@@ -1006,9 +1018,13 @@ def install_system(args, token):
         child_docker_config()
         root = SERVICE_HOME / ".oac/nodes" / args.installation_id
         unit = SYSTEM_UNITS / unit_name(args.installation_id)
-        root_file(SYSTEM_RECORDS / (args.installation_id + ".json"),
-                  json_text({"format": 1, "installation_id": args.installation_id, "provider": provider,
-                             "core_url": args.core_url, "node_root": str(root), "unit": str(unit)}))
+        record_state = {"format": 1, "installation_id": args.installation_id, "provider": provider,
+                        "core_url": args.core_url, "node_root": str(root), "unit": str(unit)}
+        if args.allow_insecure_origin:
+            # An opted-in installation records the policy so uninstall and reruns can
+            # validate the address; a default record keeps its existing bytes.
+            record_state["allow_insecure_origin"] = True
+        root_file(SYSTEM_RECORDS / (args.installation_id + ".json"), json_text(record_state))
         args.system, args.provider = True, provider
         run_as(account, prepare_service_node, args, token, helper_archive)
         root_file(unit, system_unit(root, provider))
@@ -1210,6 +1226,7 @@ def wait_ready(root, args, timeout=60):
         identity = stored["identity"]
         credential = stored["credential"]
         if (len(raw) > 16384 or stored["core_url"] != args.core_url
+                or bool(stored.get("allow_insecure_origin", False)) != args.allow_insecure_origin
                 or identity["installation_id"] != args.installation_id or identity["provider"] != args.provider
                 or str(uuid.UUID(identity["node_id"])) != identity["node_id"]
                 or not re.fullmatch(r"[0-9a-f]{64}", credential)):
@@ -1257,9 +1274,11 @@ def read_token(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--source-url", type=origin)
+    source.add_argument("--source-url")
     source.add_argument("--bundle", type=Path)
-    parser.add_argument("--core-url", type=origin)
+    parser.add_argument("--core-url")
+    parser.add_argument("--allow-insecure-origin", action="store_true",
+                        help="Allow a non-loopback plaintext http Core origin (development and test only)")
     parser.add_argument("--provider", choices=("docker", "microsandbox"), help="Optional assertion; Core owns provider selection")
     parser.add_argument("--installation-id", required=True)
     parser.add_argument("--enrollment-token-stdin", action="store_true", help="Read the one-time enrollment token from standard input")
@@ -1273,6 +1292,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.no_color:
         os.environ["NO_COLOR"] = "1"
+    # The origin rule depends on --allow-insecure-origin, which argparse's per-value
+    # type cannot see, so validate both addresses after the whole command line is read.
+    for name in ("source_url", "core_url"):
+        value = getattr(args, name)
+        if value is not None:
+            try:
+                setattr(args, name, origin(value, args.allow_insecure_origin))
+            except argparse.ArgumentTypeError as error:
+                parser.error(str(error))
     if str(uuid.UUID(args.installation_id)) != args.installation_id:
         raise InstallError("Installation ID must be a canonical UUID")
     if args.update:

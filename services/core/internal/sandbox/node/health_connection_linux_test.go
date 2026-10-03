@@ -33,7 +33,7 @@ func TestHostHealthReconnectStartsFreshInterval(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	a := agent{config: AgentConfig{CoreURL: server.URL, StateDirectory: t.TempDir(), Identity: identity(), Probe: probe}, stored: StoredIdentity{OwnerEpoch: 1}}
+	a := agent{config: AgentConfig{CoreURL: server.URL, StateDirectory: t.TempDir(), Identity: identity(), Probe: probe}, stored: StoredIdentity{CoreURL: server.URL, OwnerEpoch: 1}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for i := 0; i < 2; i++ {

@@ -97,7 +97,7 @@ func TestLostCreateResponseDoesNotReplayAndReconnectSerializesCleanup(t *testing
 	defer server.Close()
 	defer hub.Close()
 	dir := stateDir(t)
-	stored, err := InitIdentity(dir, server.URL, id)
+	stored, err := InitIdentity(dir, server.URL, id, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestAgentRejectsDuplicateSequenceAndRetainsEpoch(t *testing.T) {
 	}))
 	defer server.Close()
 	dir := stateDir(t)
-	stored, e := InitIdentity(dir, server.URL, id)
+	stored, e := InitIdentity(dir, server.URL, id, false)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -260,7 +260,7 @@ func TestEnrollmentLostResponseRecoversWithPersistedCredential(t *testing.T) {
 	defer server.Close()
 	dir := stateDir(t)
 	var err error
-	stored, err = InitIdentity(dir, server.URL, id)
+	stored, err = InitIdentity(dir, server.URL, id, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestEnrollmentLostResponseRecoversWithPersistedCredential(t *testing.T) {
 		t.Fatal("enrollment was replayed, identity rotated or approved capacity lost")
 	}
 	id.MaxActive, id.MaxRetained = 0, 0
-	if retry, err := InitIdentity(dir, server.URL, id); err != nil || retry != recovered {
+	if retry, err := InitIdentity(dir, server.URL, id, false); err != nil || retry != recovered {
 		t.Fatal("register retry treated absent local capacity as an override", err)
 	}
 	if _, err := Enroll(t.Context(), server.URL, dir, "consumed", EnrollmentRequest{Name: "test"}); err != nil || enrollments != 1 {
@@ -293,6 +293,92 @@ func TestCoreURLRejectsRemotePlaintextAndCredentials(t *testing.T) {
 		if _, err := endpoint(raw, "/api/v1/sandbox-node/enroll"); err != nil {
 			t.Fatalf("rejected %q: %v", raw, err)
 		}
+	}
+	// The explicit variant admits a non-loopback plaintext origin but keeps every
+	// other origin rule: credentials, query, fragment, path and non-http schemes.
+	if got, err := endpointAllowingInsecureOrigin("http://core.example.test:8080", "/api/v1/sandbox-node/connect"); err != nil || got != "http://core.example.test:8080/api/v1/sandbox-node/connect" {
+		t.Fatalf("relaxed endpoint = %q, %v", got, err)
+	}
+	for _, raw := range []string{"http://user:pass@example.com", "http://example.com/path", "http://example.com/?x=1", "ftp://example.com"} {
+		if _, err := endpointAllowingInsecureOrigin(raw, "/x"); err == nil {
+			t.Fatalf("relaxed endpoint accepted %q", raw)
+		}
+	}
+}
+
+func TestInsecureOriginPolicyPersistsInRetainedIdentity(t *testing.T) {
+	dir := stateDir(t)
+	id := identity()
+	stored, err := InitIdentity(dir, "http://core.example.test:8080", id, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.AllowInsecureOrigin {
+		t.Fatal("InitIdentity did not return the enrollment policy")
+	}
+	reloaded, err := LoadIdentity(dir)
+	if err != nil || !reloaded.AllowInsecureOrigin || reloaded.CoreURL != "http://core.example.test:8080" {
+		t.Fatalf("policy was not retained: %+v, %v", reloaded, err)
+	}
+	if got, err := reloaded.coreEndpoint("/api/v1/sandbox-node/connect"); err != nil || got != "http://core.example.test:8080/api/v1/sandbox-node/connect" {
+		t.Fatalf("retained endpoint = %q, %v", got, err)
+	}
+	if _, err := InitIdentity(dir, "http://core.example.test:8080", id, false); err == nil {
+		t.Fatal("a rerun silently changed the retained origin policy")
+	}
+}
+
+func TestDefaultIdentityOmitsAndRejectsInsecureOrigin(t *testing.T) {
+	dir := stateDir(t)
+	if _, err := InitIdentity(dir, "http://core.example.test", identity(), false); err == nil {
+		t.Fatal("default enrollment accepted a non-loopback http origin")
+	}
+	stored, err := InitIdentity(dir, "https://core.example.test", identity(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "identity.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "allow_insecure_origin") {
+		t.Fatalf("a default identity changed its on-disk shape: %s", raw)
+	}
+	if _, err := stored.coreEndpoint("/x"); err != nil {
+		t.Fatalf("https endpoint rejected: %v", err)
+	}
+}
+
+func TestOldIdentityWithoutPolicyStaysStrict(t *testing.T) {
+	// An identity.json written before the field existed decodes to the strict policy.
+	dir := stateDir(t)
+	stored := StoredIdentity{Identity: identity(), Credential: strings.Repeat("ab", 32), CoreURL: "http://core.example.test"}
+	if err := writeIdentity(dir, stored); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := LoadIdentity(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AllowInsecureOrigin {
+		t.Fatal("a missing field enabled the relaxed policy")
+	}
+	if _, err := decoded.coreEndpoint("/x"); err == nil {
+		t.Fatal("an old identity accepted a non-loopback http origin")
+	}
+}
+
+func TestEnrollUsesRetainedInsecureOriginPolicy(t *testing.T) {
+	dir := stateDir(t)
+	id := identity()
+	if _, err := InitIdentity(dir, "http://core.invalid:8080", id, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Enroll(context.Background(), "http://core.invalid:8080", dir, "token", EnrollmentRequest{Name: "x"}); err == nil || strings.Contains(err.Error(), "requires HTTPS") {
+		t.Fatalf("Enroll did not use the retained policy: %v", err)
+	}
+	if _, err := RefreshIdentity(context.Background(), dir); err == nil || strings.Contains(err.Error(), "requires HTTPS") {
+		t.Fatalf("RefreshIdentity did not use the retained policy: %v", err)
 	}
 }
 

@@ -26,7 +26,7 @@ func TestCapacityRefreshUsesAuthenticatedCoreIdentity(t *testing.T) {
 	defer server.Close()
 	dir := stateDir(t)
 	var err error
-	stored, err = InitIdentity(dir, server.URL, id)
+	stored, err = InitIdentity(dir, server.URL, id, false)
 	if err != nil {
 		t.Fatal(err)
 	}

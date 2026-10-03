@@ -51,7 +51,8 @@ class NodeInstallTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.home = Path(temporary.name).resolve()
         self.args = argparse.Namespace(source_url="https://console.example", core_url="https://172.29.144.1:24443",
-                                       provider="docker", installation_id="94be54a1-138c-4f30-bc87-b13686272dbe")
+                                       provider="docker", installation_id="94be54a1-138c-4f30-bc87-b13686272dbe",
+                                       allow_insecure_origin=False)
         self.root = self.home / ".oac/nodes" / self.args.installation_id
         self.manifest = {"platform": "linux/amd64", "source_commit": "a" * 40, "images": {"runtime": "sha256:" + "b" * 64},
                          "image_manifest_digests": {"runtime": "sha256:" + "c" * 64},
@@ -1025,6 +1026,57 @@ class NodeInstallTests(unittest.TestCase):
         self.assertEqual(installer.origin("http://[::1]:8091/"), "http://[::1]:8091")
         with self.assertRaisesRegex(installer.InstallError, "redirects"):
             installer.NoRedirect().redirect_request(None, None, 302, "", {}, "https://other.example")
+
+    def test_origin_admits_non_loopback_http_only_with_the_explicit_flag(self):
+        self.assertEqual(installer.origin("http://private.example:8091/", True), "http://private.example:8091")
+        # The relaxed rule admits only the scheme; every other origin rule still holds.
+        for value in ("http://user:pass@private.example", "http://private.example/v1", "http://private.example?x=1",
+                      "ftp://private.example", ""):
+            with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
+                installer.origin(value, True)
+
+    def test_main_gates_a_non_loopback_http_origin_on_the_flag(self):
+        base = ["--source-url", "http://console.example", "--core-url", "http://core.example",
+                "--installation-id", self.args.installation_id, "--enrollment-token-stdin"]
+        with mock.patch.object(installer.sys, "stdin", io.StringIO("synthetic-once-token\n")), \
+                mock.patch.object(installer.os, "geteuid", return_value=0), \
+                mock.patch.object(installer, "install_system") as install:
+            with self.assertRaises(SystemExit):
+                installer.main(base)
+            install.assert_not_called()
+            installer.main(base + ["--allow-insecure-origin"])
+        self.assertTrue(install.call_args.args[0].allow_insecure_origin)
+        self.assertEqual(install.call_args.args[0].core_url, "http://core.example")
+        self.assertEqual(install.call_args.args[0].source_url, "http://console.example")
+
+    def test_register_passes_the_insecure_origin_flag_only_when_enabled(self):
+        # Artifact downloads stay on HTTPS here: the distribution downloader's own
+        # HTTPS rule is a separate gate, reported rather than relaxed by this change.
+        self.args.allow_insecure_origin = True
+        self.install()
+        registers = [arguments for arguments, _ in self.calls if "register" in arguments]
+        self.assertEqual(len(registers), 1)
+        self.assertIn("--allow-insecure-origin", registers[0])
+        self.assertTrue(json.loads((self.root / "registered.json").read_text())["allow_insecure_origin"])
+
+    def test_default_install_omits_the_policy_and_the_register_flag(self):
+        self.install()
+        registers = [arguments for arguments, _ in self.calls if "register" in arguments]
+        self.assertEqual(len(registers), 1)
+        self.assertNotIn("--allow-insecure-origin", registers[0])
+        self.assertNotIn("allow_insecure_origin", json.loads((self.root / "installation.json").read_text()))
+        self.assertNotIn("allow_insecure_origin", json.loads((self.root / "registered.json").read_text()))
+
+    def test_node_record_validates_an_http_address_under_its_recorded_policy(self):
+        record = {"installation_id": self.args.installation_id, "provider": "docker", "core_url": "http://private.example",
+                  "node_root": str(installer.SERVICE_HOME / ".oac/nodes" / self.args.installation_id),
+                  "unit": str(installer.SYSTEM_UNITS / installer.unit_name(self.args.installation_id))}
+        # A record without the policy (an older install) keeps the strict rule.
+        with mock.patch.object(installer, "read_root_json", return_value=record):
+            with self.assertRaisesRegex(installer.InstallError, "invalid Core address"):
+                installer.node_record(self.args.installation_id)
+        with mock.patch.object(installer, "read_root_json", return_value=dict(record, allow_insecure_origin=True)):
+            self.assertEqual(installer.node_record(self.args.installation_id)["core_url"], "http://private.example")
 
 
 class NodePrerequisiteTests(unittest.TestCase):
