@@ -17,6 +17,7 @@ CI_INPUTS = {
     ".github/workflows/api-acceptance.yml": ("api", "lint"),
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
+    ".github/workflows/e2e-install.yml": ("lint",),
     ".github/actionlint.yaml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
     ".github/workflows/website.yml": ("website", "lint"),
