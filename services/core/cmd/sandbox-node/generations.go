@@ -19,6 +19,18 @@ import (
 	providerconfig "github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox/providers"
 )
 
+// helperArguments is the single command line for the generation helper. The
+// retained insecure-origin policy travels as an explicit flag so the helper
+// never re-derives it from the command's own Core URL.
+func helperArguments(helper, installationID, action string, generation uint64, digest string, allowInsecureOrigin bool) []string {
+	arguments := []string{"python3", helper, "--installation-id", installationID, "--generation-action", action,
+		"--generation", strconv.FormatUint(generation, 10), "--specification-digest", digest}
+	if allowInsecureOrigin {
+		arguments = append(arguments, "--allow-insecure-origin")
+	}
+	return arguments
+}
+
 func runGenerations(ctx context.Context, registry *providerconfig.Registry, configFile, stateDir string) error {
 	root := filepath.Dir(configFile)
 	if stateDir != filepath.Join(root, "state", "node") {
@@ -118,7 +130,8 @@ func runGenerations(ctx context.Context, registry *providerconfig.Registry, conf
 	}
 	helper := filepath.Join(root, "generation-preparer.pyz")
 	runHelper := func(ctx context.Context, action string, generation uint64, digest string) error {
-		command := exec.CommandContext(ctx, "python3", helper, "--installation-id", base.InstallationID, "--generation-action", action, "--generation", strconv.FormatUint(generation, 10), "--specification-digest", digest)
+		arguments := helperArguments(helper, base.InstallationID, action, generation, digest, stored.AllowInsecureOrigin)
+		command := exec.CommandContext(ctx, arguments[0], arguments[1:]...)
 		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		// Only the preparation/collection process group is canceled. Native sandbox
 		// helpers retain their independent allocation-lock completion semantics.

@@ -96,7 +96,21 @@ def artifact(manifest, name):
     return entry
 
 
-def safe_url(value):
+def origin_of(value):
+    """Return the normalized (scheme, host, port) origin, or None without a usable host."""
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if not parsed.hostname:
+        return None
+    if port is None:
+        port = {'http': 80, 'https': 443}.get(parsed.scheme)
+    return (parsed.scheme, parsed.hostname, port)
+
+
+def safe_url(value, allow_insecure_origin=False, source_origin=None):
     try:
         parsed = urlsplit(value)
         parsed.port
@@ -108,7 +122,13 @@ def safe_url(value):
                 pass
         if (not parsed.hostname or parsed.username is not None or parsed.password is not None
                 or parsed.fragment or any(c.isspace() for c in value)
-                or '\\' in value or parsed.scheme != 'https' and not (parsed.scheme == 'http' and loopback)):
+                or '\\' in value):
+            raise ValueError()
+        # Plaintext is admitted only for loopback testing or, behind the opt-in
+        # switch, for the configured console origin itself; every other scheme
+        # and every cross-host plaintext URL keeps the original refusal.
+        if parsed.scheme != 'https' and not (parsed.scheme == 'http' and (
+                loopback or (allow_insecure_origin and source_origin is not None and origin_of(value) == source_origin))):
             raise ValueError()
     except ValueError:
         raise ArtifactError('Artifact downloads require HTTPS; loopback HTTP is only for local testing') from None
@@ -117,9 +137,19 @@ def safe_url(value):
 
 class ArtifactRedirect(urllib.request.HTTPRedirectHandler):
     """Only artifact bytes may follow HTTPS redirects; metadata stays on Core."""
+    def __init__(self, allow_insecure_origin=False, source_origin=None):
+        super().__init__()
+        self.allow_insecure_origin = allow_insecure_origin
+        self.source_origin = source_origin
+
     def redirect_request(self, request, fp, code, msg, headers, newurl):
-        safe_url(newurl)
-        if urlsplit(newurl).scheme != 'https' or request.get_method() not in ('GET', 'HEAD'):
+        safe_url(newurl, self.allow_insecure_origin, self.source_origin)
+        # A plaintext hop is only a same-origin resume of an http source; an HTTPS
+        # transfer never downgrades, and a plaintext hop never changes host.
+        if (urlsplit(newurl).scheme != 'https' and not (self.allow_insecure_origin
+                and urlsplit(newurl).scheme == 'http' and self.source_origin is not None
+                and origin_of(newurl) == self.source_origin and urlsplit(request.full_url).scheme != 'https')
+                or request.get_method() not in ('GET', 'HEAD')):
             raise ArtifactError('Artifact redirects require HTTPS')
         # Carry resume headers, never credentials or cookies, to a release/CDN host.
         forwarded = {name: value for name, value in request.header_items()
@@ -149,7 +179,7 @@ def matches(path, entry):
     return path.stat().st_size == entry['size'] and digest(path) == entry['sha256']
 
 
-def obtain_artifact(manifest, logical_path, destination, offline_root=None):
+def obtain_artifact(manifest, logical_path, destination, offline_root=None, allow_insecure_origin=False, source_url=None):
     entry = artifact(manifest, logical_path)
     target = checked_path(destination)
     if target.exists():
@@ -168,13 +198,14 @@ def obtain_artifact(manifest, logical_path, destination, offline_root=None):
     base = manifest.get('artifact_base_url', '')
     if not isinstance(base, str) or not base or urlsplit(base).query:
         raise ArtifactError('No downloadable artifact source; use the matching offline bundle')
-    url = safe_url(base.rstrip('/') + '/' + entry['filename'])
+    source_origin = origin_of(source_url) if (allow_insecure_origin and source_url) else None
+    url = safe_url(base.rstrip('/') + '/' + entry['filename'], allow_insecure_origin, source_origin)
     # A private partial file survives interruptions and reruns; the next attempt asks
     # for the missing bytes only. The complete file is still verified as a whole.
     partial = target.with_name('.' + target.name + '.partial')
     for attempt in range(3):
         try:
-            download_partial(url, partial, entry, logical_path)
+            download_partial(url, partial, entry, logical_path, allow_insecure_origin, source_origin)
             break
         except urllib.error.HTTPError as error:
             if error.code == 416:
@@ -230,7 +261,7 @@ def copy_artifact(source, target, entry, logical_path):
 SLOW_SECONDS, SLOW_BYTES = 60, 64 * 1024
 
 
-def download_partial(url, partial, entry, logical_path):
+def download_partial(url, partial, entry, logical_path, allow_insecure_origin=False, source_origin=None):
     """Complete the partial file, asking only for the bytes it is missing."""
     size = entry['size']
     offset = 0
@@ -254,7 +285,7 @@ def download_partial(url, partial, entry, logical_path):
         if validator:
             headers['If-Range'] = validator
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.build_opener(ArtifactRedirect()).open(request, timeout=30) as stream:
+    with urllib.request.build_opener(ArtifactRedirect(allow_insecure_origin, source_origin)).open(request, timeout=30) as stream:
         if offset and (stream.status != 206 or not stream.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
             offset = 0  # The server sent the whole file; start over.
         if not offset:
@@ -297,7 +328,7 @@ def download_partial(url, partial, entry, logical_path):
             raise http.client.IncompleteRead(b'', size - count)
 
 
-def runtime_archive(manifest, cache_root, offline_root=None):
+def runtime_archive(manifest, cache_root, offline_root=None, allow_insecure_origin=False, source_url=None):
     entry = artifact(manifest, 'images/runtime.tar.gz')
     expanded = {'sha256': entry.get('unpacked_sha256'), 'size': entry.get('unpacked_size')}
     if (not re.fullmatch(r'[0-9a-f]{64}', str(expanded['sha256']))
@@ -309,7 +340,8 @@ def runtime_archive(manifest, cache_root, offline_root=None):
         if not matches(target, expanded):
             raise ArtifactError('Cached Runtime archive differs; preserve state and inspect it')
         return target
-    archive = obtain_artifact(manifest, 'images/runtime.tar.gz', root / 'images/runtime.tar.gz', offline_root)
+    archive = obtain_artifact(manifest, 'images/runtime.tar.gz', root / 'images/runtime.tar.gz', offline_root,
+                              allow_insecure_origin, source_url)
     fd, temporary = tempfile.mkstemp(prefix='.runtime-', dir=target.parent)
     try:
         with os.fdopen(fd, 'wb') as output, gzip.open(archive, 'rb') as stream:
@@ -330,8 +362,10 @@ def runtime_archive(manifest, cache_root, offline_root=None):
     return target
 
 
-def load_manifest(source_url=None, offline_root=None):
+def load_manifest(source_url=None, offline_root=None, allow_insecure_origin=False):
     """Read the matched public manifest without transmitting installation credentials."""
+    source_origin = origin_of(source_url) if (allow_insecure_origin and source_url) else None
+
     def read(name):
         if offline_root is not None:
             with (Path(offline_root) / name).open('rb') as stream:
@@ -339,7 +373,7 @@ def load_manifest(source_url=None, offline_root=None):
         else:
             if not source_url:
                 raise DistributionError('A Core source URL or offline bundle is required')
-            url = safe_url(source_url.rstrip('/') + '/node-install/' + name)
+            url = safe_url(source_url.rstrip('/') + '/node-install/' + name, allow_insecure_origin, source_origin)
             for attempt in range(3):
                 try:
                     with urllib.request.build_opener(NoRedirect()).open(url, timeout=30) as stream:

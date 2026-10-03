@@ -7,12 +7,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"syscall"
 	"testing"
 
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox"
 	providerconfig "github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox/providers"
 )
+
+func TestGenerationHelperArgumentsCarryInsecureOrigin(t *testing.T) {
+	defaults := helperArguments("/state/generation-preparer.pyz", "installation", "prepare", 7, "digest", false)
+	want := []string{"python3", "/state/generation-preparer.pyz", "--installation-id", "installation",
+		"--generation-action", "prepare", "--generation", "7", "--specification-digest", "digest"}
+	if !reflect.DeepEqual(defaults, want) {
+		t.Fatalf("default helper arguments changed: %v", defaults)
+	}
+	allowed := helperArguments("/state/generation-preparer.pyz", "installation", "collect", 7, "digest", true)
+	if allowed[len(allowed)-1] != "--allow-insecure-origin" {
+		t.Fatalf("insecure-origin policy was not projected: %v", allowed)
+	}
+}
 
 func TestGenerationJournalRestartIdentity(t *testing.T) {
 	config := providerconfig.Config{InstallationID: "installation", Generation: 9, Provider: "docker"}

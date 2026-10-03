@@ -69,6 +69,8 @@ SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 CHILD_DOCKER_CONFIG = Path("/run/oac-node-docker")
 LOCK_WAIT_SECONDS = 600
 NOTHING_CHANGED = " Nothing was changed."
+INSECURE_ORIGIN_WARNING = ("Warning: allow_insecure_origin is enabled; this node may download node artifacts and connect "
+                           "to Core over plaintext HTTP. Use it only on a trusted development network.")
 
 
 def origin(value, allow_insecure_origin=False):
@@ -315,7 +317,9 @@ def prepare_runtime(root, args, manifest):
     if args.provider == "docker":
         docker = ["docker", "--host", "unix:///var/run/docker.sock"]
         image = distribution.ensure_docker_image(
-            manifest, "runtime", lambda: distribution.runtime_archive(manifest, root, getattr(args, "bundle", None)), docker)
+            manifest, "runtime", lambda: distribution.runtime_archive(
+                manifest, root, getattr(args, "bundle", None),
+                getattr(args, "allow_insecure_origin", False), args.source_url), docker)
         network = "oac-node-" + args.installation_id
         networks = checked(docker + ["network", "ls", "--format", "{{.Name}}"], "Cannot inspect Docker networks").splitlines()
         if network not in networks:
@@ -338,7 +342,8 @@ def prepare_runtime(root, args, manifest):
             except (InstallError, ValueError, AttributeError):
                 return False
         if not matches():
-            archive = distribution.runtime_archive(manifest, root, getattr(args, "bundle", None))
+            archive = distribution.runtime_archive(manifest, root, getattr(args, "bundle", None),
+                                                   getattr(args, "allow_insecure_origin", False), args.source_url)
             checked([str(root / MICRO[1]), "image", "load", "--input", str(archive), "--tag", manifest["runtime_ref"], "--quiet"],
                     "Cannot import the microsandbox runtime image; check free disk space and host libraries", timeout=1800, env=env)
             if not matches():
@@ -417,7 +422,8 @@ def register_node(root, args, token, helper_archive=None):
             target = root / name
             safe_directory(target.parent)
             existing_file(target)
-            distribution.obtain_artifact(program_manifest if name in provider_assets.artifacts(args.provider, ("node",)) else manifest, name, target, getattr(args, "bundle", None))
+            distribution.obtain_artifact(program_manifest if name in provider_assets.artifacts(args.provider, ("node",)) else manifest, name, target,
+                                         getattr(args, "bundle", None), args.allow_insecure_origin, args.source_url)
             os.chmod(target, 0o700)
     node_generations.install_helper(root, args, sys.modules[__name__], helper_archive)
     safe_directory(root / "state/node")
@@ -1301,6 +1307,8 @@ def main(argv=None):
                 setattr(args, name, origin(value, args.allow_insecure_origin))
             except argparse.ArgumentTypeError as error:
                 parser.error(str(error))
+    if args.allow_insecure_origin:
+        print(INSECURE_ORIGIN_WARNING, file=sys.stderr)
     if str(uuid.UUID(args.installation_id)) != args.installation_id:
         raise InstallError("Installation ID must be a canonical UUID")
     if args.update:

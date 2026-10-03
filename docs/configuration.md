@@ -31,7 +31,7 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 
 `OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. The installation serves Web over HTTP on `OAC_WEB_PORT`; your reverse proxy or hosting platform terminates HTTPS and routes to that port.
 
-A `http://` origin is accepted only for a loopback host. A development or test installation can set `OAC_ALLOW_INSECURE_ORIGIN=1` to accept a non-loopback one; TLS certificate verification stays on.
+A `http://` origin is accepted only for a loopback host. A development or test installation can set `OAC_ALLOW_INSECURE_ORIGIN=1` to accept a non-loopback one, and nodes may then also download their artifacts from that plaintext origin; TLS certificate verification stays on.
 
 To change it, point the reverse proxy at the new address first, then edit `OAC_PUBLIC_URL` and run `oac apply`. Afterwards:
 
@@ -46,7 +46,7 @@ To change it, point the reverse proxy at the new address first, then edit `OAC_P
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
-| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing. TLS certificate verification stays on |
+| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing, including node artifact downloads from that origin. TLS certificate verification stays on |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
