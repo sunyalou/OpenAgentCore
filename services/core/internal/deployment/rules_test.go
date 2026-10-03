@@ -34,6 +34,32 @@ func TestValidateCoreURL(t *testing.T) {
 	}
 }
 
+// ValidateCoreURLAllowingInsecure adds a non-loopback HTTP origin without
+// weakening the default ValidateCoreURL contract the installer shares.
+func TestValidateCoreURLAllowingInsecure(t *testing.T) {
+	for _, value := range []string{
+		"https://core.example", "https://core.example:8443", "http://localhost:8091", "http://127.0.0.2:8091",
+		"http://[::1]:8091", "https://[2001:db8::1]", "http://core.example", "http://core.example:8091",
+		"http://192.168.1.10:8080", "http://10.0.0.5", "http://[2001:db8::1]:8080",
+	} {
+		if err := ValidateCoreURLAllowingInsecure(value); err != nil {
+			t.Errorf("insecure Core URL %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{
+		"", "ftp://core.example", "ws://core.example", "http://core.example/", "https://core.example/path",
+		"https://user:secret@core.example", "http://CORE.example", "http://core.example:0080", "http://core.example.",
+		"http://core..example", "http://core_example", "http://[not-an-ip]",
+	} {
+		if err := ValidateCoreURLAllowingInsecure(value); !errors.Is(err, ErrInvalidInput) {
+			t.Errorf("invalid insecure Core URL %q accepted: %v", value, err)
+		}
+	}
+	if err := ValidateCoreURL("http://core.example"); !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("ValidateCoreURL accepted a non-loopback HTTP origin: %v", err)
+	}
+}
+
 func TestParseID(t *testing.T) {
 	id := uuid.New()
 	if got, err := parseID(strings.ToUpper(id.String())); err != nil || got != id.String() {

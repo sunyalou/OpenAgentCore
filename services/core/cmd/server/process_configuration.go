@@ -39,10 +39,23 @@ func publicURL() (string, error) {
 	if value == "" {
 		return "", nil
 	}
+	if allowInsecureOrigin() {
+		if deployment.ValidateCoreURLAllowingInsecure(value) != nil {
+			return "", errors.New("OAC_PUBLIC_URL must be a canonical origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted because OAC_ALLOW_INSECURE_ORIGIN is set")
+		}
+		return value, nil
+	}
 	if deployment.ValidateCoreURL(value) != nil {
 		return "", errors.New("OAC_PUBLIC_URL must be a canonical HTTPS origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted only for a loopback host")
 	}
 	return value, nil
+}
+
+// allowInsecureOrigin reads OAC_ALLOW_INSECURE_ORIGIN, which the installer
+// derives from config.json allow_insecure_origin. It is never inferred from
+// OAC_PUBLIC_URL or read from another variable.
+func allowInsecureOrigin() bool {
+	return os.Getenv("OAC_ALLOW_INSECURE_ORIGIN") == "1"
 }
 
 // The launcher loads core.env. Core reports its sources without parsing another

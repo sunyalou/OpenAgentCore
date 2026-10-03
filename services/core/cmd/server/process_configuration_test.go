@@ -42,3 +42,35 @@ func TestPublicURLMustBeACanonicalOrigin(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicURLAcceptsInsecureOriginOnlyWhenEnabled(t *testing.T) {
+	const insecure = "http://10.0.0.5:8080"
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "1")
+	if err := os.Unsetenv("OAC_ALLOW_INSECURE_ORIGIN"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OAC_PUBLIC_URL", insecure)
+	if _, err := publicURL(); err == nil {
+		t.Fatal("accepted a non-loopback HTTP origin with OAC_ALLOW_INSECURE_ORIGIN unset")
+	}
+	// Only the installer's derived value "1" enables the relaxed check.
+	for _, value := range []string{"0", "true", "yes", "TRUE", "2"} {
+		t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", value)
+		if _, err := publicURL(); err == nil {
+			t.Fatalf("accepted a non-loopback HTTP origin with OAC_ALLOW_INSECURE_ORIGIN=%q", value)
+		}
+	}
+	t.Setenv("OAC_ALLOW_INSECURE_ORIGIN", "1")
+	got, err := publicURL()
+	if err != nil || got != insecure {
+		t.Fatalf("publicURL() = %q, %v", got, err)
+	}
+	if ws, err := runtimeWebSocketURL(got); err != nil || ws != "ws://10.0.0.5:8080/api/v1/agent-daemon/ws" {
+		t.Fatalf("runtimeWebSocketURL(%q) = %q, %v", got, ws, err)
+	}
+	// A malformed origin is still rejected while the switch is on.
+	t.Setenv("OAC_PUBLIC_URL", "http://Core.example")
+	if _, err := publicURL(); err == nil {
+		t.Fatal("accepted a non-canonical origin with OAC_ALLOW_INSECURE_ORIGIN set")
+	}
+}
