@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: ac744d8df2682f0c19eb6b05c1ef50a9e7c7a9d214316317458669f4cb00f477
+source_hash: adf81c3f9d3e7c00e941c9756def0a22f93a866a23ed287fbfd7da85caa4b348
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -132,7 +132,7 @@ git push origin v1.2.3
 
 ### 容器注册表 {#container-registry}
 
-版本发布和手动的 `build-<full SHA>` 草稿都会将 Linux amd64 镜像发布到发布仓库在 GHCR 下的命名空间：`ghcr.io/<owner>/openagentcore/<component>:<version>`，其中 `<component>` 为 `core`、`web`、`runtime` 或 `ingress`。例如上游仓库会发布 `ghcr.io/minimax-ai/openagentcore/core:v1.2.3`。草稿使用标签 `build-<full SHA>`。PostgreSQL 使用其上游镜像，不会重新发布。注册表镜像从发布归档中加载，不会重新构建。仅当现有版本标签的镜像配置摘要与本次发布相同时才复用该标签；如果镜像不同，则停止发布。稳定版还会把每个组件的 `latest` 标签移到该镜像。预发布和草稿不会改动 `latest`。SemVer 构建元数据在容器标签中使用 `_` 代替 `+`；长度超过 128 个字符的版本字符串无法发布到 GHCR。镜像验证之后，发布器会上传为该发行版渲染的 `compose.yaml` 和 `ports.yaml` 及其校验和；每个 `OAC_IMAGE_{CORE,WEB,INGRESS}` 默认值都指向该发行版所属仓库及其发布的标签，因此 fork 安装无需覆盖镜像。草稿 Release 保持未发布。
+版本发布和手动的 `build-<full SHA>` 草稿都会将 Linux amd64 镜像发布到发布仓库在 GHCR 下的命名空间：`ghcr.io/<owner>/<repository>/<component>:<version>`，其中 `<component>` 为 `core`、`web`、`runtime` 或 `ingress`。例如上游仓库会发布 `ghcr.io/minimax-ai/openagentcore/core:v1.2.3`。草稿使用标签 `build-<full SHA>`。PostgreSQL 使用其上游镜像，不会重新发布。注册表镜像从发布归档中加载，不会重新构建。仅当现有版本标签的镜像配置摘要与本次发布相同时才复用该标签；如果镜像不同，则停止发布。稳定版还会把每个组件的 `latest` 标签移到该镜像。预发布和草稿不会改动 `latest`。SemVer 构建元数据在容器标签中使用 `_` 代替 `+`；长度超过 128 个字符的版本字符串无法发布到 GHCR。镜像验证之后，发布器会上传为该发行版渲染的 `compose.yaml` 和 `ports.yaml` 及其校验和；每个 `OAC_IMAGE_{CORE,WEB,INGRESS}` 默认值都指向该发行版所属仓库及其发布的标签，因此 fork 安装无需覆盖镜像。草稿 Release 保持未发布。
 
 合并的构建/发布作业使用具有 `packages: write` 权限的 `GITHUB_TOKEN`。首次发布时，GitHub 会将每个容器软件包创建为私有：软件包管理员必须先在各自的软件包设置中将全部四个软件包改为 **Public**，用户才能匿名拉取。请参阅 [GitHub container visibility](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。更改可见性后，请验证未认证拉取。仅更改仓库可见性并不会使新的容器软件包变为公开。
 
