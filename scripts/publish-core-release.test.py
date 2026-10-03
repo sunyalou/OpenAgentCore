@@ -202,6 +202,29 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(self.release["draft"])
         self.assertFalse(any(c.args[1].startswith("git/") for c in self.api.call_args_list))
 
+    def test_rendered_compose_uses_the_release_repository_and_tag(self):
+        self.canonical_repository = "sunyalou/OpenAgentCore"
+        self.publish(tag="build-" + self.revision, mode="draft")
+        text = (self.assets / "compose.yaml").read_text()
+        for name in ("core", "web", "ingress"):
+            self.assertIn("ghcr.io/sunyalou/openagentcore/" + name + ":build-" + self.revision, text)
+
+    def test_stable_release_renders_the_upstream_latest_default(self):
+        self.publish()
+        text = (self.assets / "compose.yaml").read_text()
+        for name in ("core", "web", "ingress"):
+            self.assertIn("ghcr.io/minimax-ai/openagentcore/" + name + ":latest", text)
+
+    def test_prerelease_release_renders_the_tag_it_publishes(self):
+        self.publish("v1.2.3-rc.1")
+        self.images.assert_called_once()
+        self.assertEqual(self.images.call_args.args[3], "v1.2.3-rc.1")
+        self.assertFalse(self.images.call_args.kwargs["floating_latest"])
+        text = (self.assets / "compose.yaml").read_text()
+        for name in ("core", "web", "ingress"):
+            self.assertIn("ghcr.io/minimax-ai/openagentcore/" + name + ":v1.2.3-rc.1", text)
+        self.assertNotIn(":latest", text)
+
     def test_existing_public_or_draft_release_is_refused(self):
         for draft in (True, False):
             with self.subTest(draft=draft):

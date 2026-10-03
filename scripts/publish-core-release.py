@@ -272,10 +272,16 @@ def publish(assets, repository, revision, tag, mode):
         raise ValueError("Release asset inventory differs from the build")
     stable = re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:\+[0-9A-Za-z.-]+)?", tag) is not None
     images = publish_images(assets, repository, revision, tag, floating_latest=mode == "publish" and stable)
+    # A stable publication also moves each component's `latest` tag, which keeps the
+    # rendered default that upstream always shipped. Every other release renders the
+    # exact tag it published (for example a manual `build-<full SHA>` draft).
+    image_tag = "latest" if mode == "publish" and stable else tag.replace("+", "_")
     compose_files = render_compose.write_assets(assets, {
         "REVISION": revision,
         "RELEASE_BASE": "https://github.com/" + repository + "/releases/download/" + tag + "/",
         "ARCHIVE_CHECKSUM": distribution.sha256(assets / (stem + ".tar.gz")),
+        "IMAGE_REPOSITORY": "ghcr.io/" + repository.lower(),
+        "IMAGE_TAG": image_tag,
     })
     expected.update({path.name: path.stat().st_size for path in compose_files})
     parallel_each(upload, compose_files)
