@@ -53,14 +53,18 @@ func run(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("sandbox-node "+args[0], flag.ContinueOnError)
 	configFile := flags.String("config", "", "absolute provider configuration file")
 	stateDir := flags.String("state-dir", "", "absolute private node state directory")
-	coreURL := flags.String("core-url", "", "Core HTTPS origin (register only)")
+	coreURL := flags.String("core-url", "", "Core HTTPS origin, or a non-loopback http origin with --allow-insecure-origin (register only)")
 	name := flags.String("name", "sandbox-node", "display name (register only)")
 	tokenFile := flags.String("enrollment-token-file", "", "private single-use enrollment token file (register only)")
+	allowInsecureOrigin := flags.Bool("allow-insecure-origin", false, "Allow a non-loopback plaintext http Core origin (development and test only; register only)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected arguments")
+	}
+	if args[0] == "run" && *allowInsecureOrigin {
+		return errors.New("--allow-insecure-origin applies only to register; run uses the retained identity")
 	}
 	if !filepath.IsAbs(*configFile) || !filepath.IsAbs(*stateDir) {
 		return errors.New("config and state-dir must be absolute paths")
@@ -119,7 +123,7 @@ func run(ctx context.Context, args []string) error {
 		if token == "" || len(token) > 4096 {
 			return errors.New("invalid enrollment token")
 		}
-		if _, err = node.InitIdentity(*stateDir, *coreURL, expected); err != nil {
+		if _, err = node.InitIdentity(*stateDir, *coreURL, expected, *allowInsecureOrigin); err != nil {
 			return err
 		}
 		probeCtx, stopProbe := context.WithTimeout(ctx, 5*time.Second)

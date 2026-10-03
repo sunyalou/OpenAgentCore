@@ -149,6 +149,8 @@ Use manual registration when you manage the node's files and service yourself in
      --state-dir /var/lib/oac/node
    ```
 
+To register over a non-loopback `http://` origin for development or testing, add `--allow-insecure-origin` to `oac-node register`. The node then keeps a `ws://` connection; `oac-node run` takes no such flag and uses the policy recorded at registration. Plaintext HTTP carries no transport encryption and is not for production.
+
 `oac-node run` exits with status 78 once Core rejects its credential, after the node is removed; configure the supervisor not to restart it then (systemd: `RestartPreventExitStatus=78`).
 
 The node connects out to Core; Core needs no SSH or Docker TCP access to the host. Registration writes the node's identity to the state directory before contacting Core, so a lost response can be retried under the same identity. Keep the state directory on persistent storage, private to the node's account and used by one process at a time. Never copy it to another directory or host: Core refuses a second connection for a node while the first is open. The provider file can't change the node's capacity or sandbox configuration. Core compares its digest at registration and on every connection, and a node whose file differs takes no work until the approved configuration is restored.

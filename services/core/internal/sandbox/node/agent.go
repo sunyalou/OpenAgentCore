@@ -102,7 +102,7 @@ func Run(ctx context.Context, config AgentConfig) error {
 	if config.CoreURL != stored.CoreURL {
 		return sandbox.ErrOwnership
 	}
-	if _, err = endpoint(config.CoreURL, ""); err != nil {
+	if _, err = stored.coreEndpoint(""); err != nil {
 		return err
 	}
 	a := &agent{config: config, stored: stored, queue: make(chan work, maxPending)}
@@ -179,7 +179,7 @@ func (a *agent) health(ctx context.Context, host *hostHealthSampler) (Health, er
 	return h, e
 }
 func (a *agent) connect(ctx context.Context) error {
-	endpointURL, err := endpoint(a.config.CoreURL, "/api/v1/sandbox-node/connect")
+	endpointURL, err := a.stored.coreEndpoint("/api/v1/sandbox-node/connect")
 	if err != nil {
 		return err
 	}

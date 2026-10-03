@@ -1,7 +1,7 @@
 ---
 title: "添加和管理节点"
 source: docs/getting-started/nodes.md
-source_hash: 10ec00613b1072139e98c8f48a0d3942a55ced4999abd4289cd1e0f00e7315f7
+source_hash: 56fc4463786dabf7e6d7588b35ebf10c59572cfa44fc83c2f97b5632ddeae24a
 ---
 
 节点是一台 Linux 主机，在沙箱后端为 Docker 或 microsandbox 时，为 Core 托管 Session 运行沙箱。Core 将新 Session 分配给有空余容量的节点；节点创建沙箱，沙箱回连 Core。E2B 不需要节点。应用为自己的 Session 连接的机器是[自托管执行器](self-hosted.md)，而不是节点。
@@ -150,6 +150,8 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
      --config /var/lib/oac/provider.json \
      --state-dir /var/lib/oac/node
    ```
+
+为开发或测试而在非回环 `http://` 源地址上注册时，在 `oac-node register` 上添加 `--allow-insecure-origin`。节点随后保持 `ws://` 连接；`oac-node run` 不接受该 flag，而使用注册时记录的策略。明文 HTTP 不提供传输加密，不适用于生产环境。
 
 节点移除后，Core 拒绝其凭据时，`oac-node run` 以状态 78 退出；配置管理器不要在该情况下重启（systemd：`RestartPreventExitStatus=78`）。
 
