@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: f9a5aae96ce8789030eda5cb399eac7c2e6bc6bd4d9bcce18138373c97cb0e96
+source_hash: 53468efe866d0774ec60d015eb6c168dd5ae5170f6b7af0c1505a63e32362d11
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -55,8 +55,11 @@ docker compose -f compose.yaml exec web oac-web core-key
 | Flag | `.env` variable |
 | --- | --- |
 | `--public-url` | `OAC_PUBLIC_URL` |
+| `--allow-insecure-origin` | `OAC_ALLOW_INSECURE_ORIGIN` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
+
+`--allow-insecure-origin` 允许开发和测试使用非回环的明文 HTTP `--public-url`。默认关闭；TLS 证书校验保持不变。
 
 ## 安装操作 {#installation-actions}
 
@@ -76,7 +79,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 默认安装在 `--host 0.0.0.0` 的 `--web-port`（8080）上发布 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
 
-`--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。把它设为反向代理提供的 HTTPS 源地址。
+`--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。把它设为反向代理提供的 HTTPS 源地址。非回环的 `http://` 源地址需要 `--allow-insecure-origin`；回环地址不需要。
 
 ### 端口 {#ports}
 

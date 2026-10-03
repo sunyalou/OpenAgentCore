@@ -8,15 +8,17 @@ install_dir="${OAC_INSTALL_DIR_DEFAULT:-$HOME/.oac/core}"
 public_url=""
 host_address="0.0.0.0"
 web_port="8080"
+allow_insecure_origin=0
 kept=0
 
 usage() {
   cat <<'EOF'
 Usage: install.sh [--version TAG] [--install-dir DIR] [--public-url URL]
-                  [--host ADDRESS] [--web-port PORT]
+                  [--host ADDRESS] [--web-port PORT] [--allow-insecure-origin]
 
 Installs Core, Web and PostgreSQL, and publishes Web on --web-port. HTTPS is
-terminated by your reverse proxy or hosting platform.
+terminated by your reverse proxy or hosting platform. --allow-insecure-origin
+permits a non-loopback plain-HTTP --public-url for development and testing.
 EOF
 }
 
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --public-url) public_url="${2:?}"; shift 2 ;;
     --host) host_address="${2:?}"; shift 2 ;;
     --web-port) web_port="${2:?}"; shift 2 ;;
+    --allow-insecure-origin) allow_insecure_origin=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -97,6 +100,7 @@ umask 077
   echo "OAC_HOST=$host_address"
   echo "OAC_WEB_PORT=$web_port"
   if [[ -n "$public_url" ]]; then echo "OAC_PUBLIC_URL=$public_url"; fi
+  if [[ "$allow_insecure_origin" == 1 ]]; then echo "OAC_ALLOW_INSECURE_ORIGIN=1"; fi
 } >"$install_dir/.env"
 
 (

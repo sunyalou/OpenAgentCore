@@ -8,6 +8,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 install_dir="${OAC_INSTALL_DIR_DEFAULT:-$HOME/.oac/local}"
 host_address="127.0.0.1"
 web_port="8080"
+allow_insecure_origin=0
 
 if [[ -x "$HOME/.oac/build/env-docker/docker" ]]; then
   PATH="$HOME/.oac/build/env-docker:$PATH"
@@ -16,9 +17,12 @@ fi
 usage() {
   cat <<'EOF'
 Usage: install.dev.sh [--install-dir DIR] [--host ADDRESS] [--web-port PORT]
+                      [--allow-insecure-origin]
 
 Builds Core, Web and the init image from this checkout and starts them.
 Open http://localhost:<port> and sign in with the printed Core key.
+--allow-insecure-origin permits a non-loopback plain-HTTP public URL for
+development and testing.
 EOF
 }
 
@@ -27,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --install-dir) install_dir="${2:?}"; shift 2 ;;
     --host) host_address="${2:?}"; shift 2 ;;
     --web-port) web_port="${2:?}"; shift 2 ;;
+    --allow-insecure-origin) allow_insecure_origin=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -120,6 +125,7 @@ OAC_IMAGE_CORE=$tag/core:dev
 OAC_IMAGE_WEB=$tag/web:dev
 OAC_IMAGE_INGRESS=$tag/ingress:dev
 EOF
+if [[ "$allow_insecure_origin" == 1 ]]; then echo "OAC_ALLOW_INSECURE_ORIGIN=1" >>"$install_dir/.env"; fi
 
 (
   cd "$install_dir"

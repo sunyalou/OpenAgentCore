@@ -28,14 +28,16 @@ def rendered_compose(directory):
 
 class ComposeTests(unittest.TestCase):
     @classmethod
-    def render(cls, public_url=None):
+    def render(cls, public_url=None, allow_insecure_origin=None):
         env = dict(os.environ)
-        env.pop('OAC_PUBLIC_URL', None)
-        for name in ('OAC_IMAGE_CORE', 'OAC_IMAGE_WEB', 'OAC_IMAGE_INGRESS'):
+        for name in ('OAC_PUBLIC_URL', 'OAC_ALLOW_INSECURE_ORIGIN',
+                     'OAC_IMAGE_CORE', 'OAC_IMAGE_WEB', 'OAC_IMAGE_INGRESS'):
             env.pop(name, None)
         env['OAC_DATA_DIR'] = '/tmp/oac-compose-fixture'
         if public_url is not None:
             env['OAC_PUBLIC_URL'] = public_url
+        if allow_insecure_origin is not None:
+            env['OAC_ALLOW_INSECURE_ORIGIN'] = allow_insecure_origin
         return json.loads(subprocess.check_output(
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(cls.compose_file),
              'config', '--format', 'json'], env=env))
@@ -67,8 +69,14 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(services['web']['healthcheck']['test'], ['CMD', '/usr/local/bin/oac-web', 'healthcheck'])
         self.assertNotIn('python3', json.dumps(self.compose))
         self.assertEqual(services['init']['environment']['OAC_REVISION'], 'd' * 40)
-        for name in ('OAC_EXECUTION_CONCURRENCY', 'OAC_DEFAULT_HARNESS', 'OAC_HARNESSES', 'OAC_WRITE_AUDIT_RETENTION', 'OAC_LOG_LEVEL'):
+        for name in ('OAC_EXECUTION_CONCURRENCY', 'OAC_DEFAULT_HARNESS', 'OAC_HARNESSES', 'OAC_WRITE_AUDIT_RETENTION', 'OAC_LOG_LEVEL', 'OAC_ALLOW_INSECURE_ORIGIN'):
             self.assertEqual(services['core']['environment'][name], '', name)
+
+    def test_allow_insecure_origin_passes_through_to_core_only(self):
+        configured = self.render(public_url='http://10.0.0.5:8080', allow_insecure_origin='1')
+        self.assertEqual(configured['services']['core']['environment']['OAC_PUBLIC_URL'], 'http://10.0.0.5:8080')
+        self.assertEqual(configured['services']['core']['environment']['OAC_ALLOW_INSECURE_ORIGIN'], '1')
+        self.assertNotIn('OAC_ALLOW_INSECURE_ORIGIN', configured['services']['web']['environment'])
 
     def test_public_url_can_be_configured_after_initial_startup(self):
         for value in (None, '', 'https://oac.example.test', 'http://localhost:9080'):
