@@ -109,6 +109,19 @@ umask 077
   docker compose create core
   docker compose cp core:/usr/local/bin/oac ./oac
   chmod 755 ./oac
+  # check-config reads the installation id and secrets that init writes, so
+  # initialize the data directory before validating the settings. A rejected
+  # configuration must fail here, not after Compose reports a running stack.
+  if ! initialized="$(docker compose run --rm -T init 2>&1)"; then
+    printf '%s\n' "$initialized" >&2
+    echo "Installation initialization failed; no service was started." >&2
+    exit 1
+  fi
+  if ! checked="$(docker compose run --rm -T --no-deps --entrypoint /usr/local/bin/oac-core core check-config 2>&1)"; then
+    printf '%s\n' "$checked" >&2
+    echo "Configuration check failed; no service was started." >&2
+    exit 1
+  fi
   docker compose up -d --wait
 )
 kept=1
