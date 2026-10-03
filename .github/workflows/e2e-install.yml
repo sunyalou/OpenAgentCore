@@ -339,17 +339,17 @@ jobs:
             if (( code == 0 )); then
               set +e
               state="$(printf '%s' "$nodes" | ENROLLMENT_ID="$OAC_ENROLLMENT_ID" python3 -c '
-              import json, os, sys
-              nodes = json.load(sys.stdin)["data"]
-              match = [n for n in nodes if n.get("enrollment_id") == os.environ["ENROLLMENT_ID"]]
-              if not match:
-                  print("waiting for the enrolled node to appear")
-                  sys.exit(1)
-              node = match[0]
-              rollout = node.get("rollout") or {}
-              print("online=%s provider_ready=%s rollout.state=%s last_seen_at=%s" % (node.get("online"), node.get("provider_ready"), rollout.get("state"), node.get("last_seen_at")))
-              sys.exit(0 if node.get("online") and node.get("provider_ready") and rollout.get("state") == "ready" else 1)
-              ')"
+          import json, os, sys
+          nodes = json.load(sys.stdin)["data"]
+          match = [n for n in nodes if n.get("enrollment_id") == os.environ["ENROLLMENT_ID"]]
+          if not match:
+              print("waiting for the enrolled node to appear")
+              sys.exit(1)
+          node = match[0]
+          rollout = node.get("rollout") or {}
+          print("online=%s provider_ready=%s rollout.state=%s last_seen_at=%s" % (node.get("online"), node.get("provider_ready"), rollout.get("state"), node.get("last_seen_at")))
+          sys.exit(0 if node.get("online") and node.get("provider_ready") and rollout.get("state") == "ready" else 1)
+          ')"
               state_code=$?
               set -e
               printf '%s\n' "$state"
