@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 1dbb0c3af7312e925639e9e0a3c868697ff7cbbd321d7aa387ca6732927a38a3
+source_hash: fab6322e73b6b8ca7e55dd7c6c67fd53b31426fa527e13210384c5e36176fc7b
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -33,7 +33,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 `OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web；反向代理或托管平台终止 HTTPS 并把流量转到该端口。
 
-`http://` 源地址仅对回环主机被接受。开发或测试安装可以设置 `OAC_ALLOW_INSECURE_ORIGIN=1` 来接受非回环源地址；TLS 证书校验保持不变。
+`http://` 源地址仅对回环主机被接受。开发或测试安装可以设置 `OAC_ALLOW_INSECURE_ORIGIN=1` 来接受非回环源地址，节点随后也可以从该明文源地址下载制品；TLS 证书校验保持不变。
 
 要更改它，先把反向代理指向新地址，然后编辑 `OAC_PUBLIC_URL` 并运行 `oac apply`。之后：
 
@@ -50,7 +50,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
-| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing. TLS certificate verification stays on |
+| `OAC_ALLOW_INSECURE_ORIGIN` | unset | `1` permits a non-loopback plain-HTTP `OAC_PUBLIC_URL` for development and testing, including node artifact downloads from that origin. TLS certificate verification stays on |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |

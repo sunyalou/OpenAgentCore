@@ -1,7 +1,7 @@
 ---
 title: "沙箱节点协议"
 source: contracts/agents-api/node-generation-protocol.md
-source_hash: 1ee43dfcdd0eec0806ea3bc8a4c1227e10bd8ac5e69486505cb113a98e3f548a
+source_hash: b67076a5ea3b9e13c18bc444d21f645e7af6c86c8e104ae0b6653433081c4b7b
 ---
 
 沙箱节点在其主机上运行 Docker 或 microsandbox Provider，并通过一个 WebSocket 与 Core 相连。Core 通过该连接发送 Provider 操作；节点针对本地 Provider 执行这些操作，并报告就绪状态、主机测量值及其持有的部署代次。Core 始终是唯一的生命周期所有者：节点绝不重试变更操作或调度工作。帧和校验器位于 [`services/core/internal/sandbox/node`](https://github.com/MiniMax-AI/OpenAgentCore/tree/main/services/core/internal/sandbox/node)（`wire.go`、`generation_wire.go`）；节点用于注册和读取配置的 HTTP 路由位于[机器连接 API](machine-api.md#node-routes)。
@@ -12,7 +12,7 @@ source_hash: 1ee43dfcdd0eec0806ea3bc8a4c1227e10bd8ac5e69486505cb113a98e3f548a
 
 ## 连接 {#connection}
 
-1. 节点在其存储的 Core 源地址上发起对 `/api/v1/sandbox-node/connect?node_id=<uuid>` 的连接（对于 `https` 使用 `wss`），并以 Bearer 请求头发送节点凭据。Core 对被拒绝的凭据返回 401，节点将其视为永久性拒绝；其他任何失败（包括代理返回的 403）都会使用有界退避进行重试。当某个节点身份已有一个连接正在建立、存活或关闭时，Core 会以 409 拒绝第二个连接。
+1. 节点在其存储的 Core 源地址上发起对 `/api/v1/sandbox-node/connect?node_id=<uuid>` 的连接（对于 `https` 使用 `wss`；保留的 `allow_insecure_origin` 策略允许时，非回环 `http` 源地址使用 `ws`），并以 Bearer 请求头发送节点凭据。Core 对被拒绝的凭据返回 401，节点将其视为永久性拒绝；其他任何失败（包括代理返回的 403）都会使用有界退避进行重试。当某个节点身份已有一个连接正在建立、存活或关闭时，Core 会以 409 拒绝第二个连接。
 2. 节点须在 15 秒内发送 `hello`，其中包含节点身份（`node_id`、`installation_id`、`provider`、`backend_fingerprint`、已登记的 `deployment_generation` 和 `specification_digest`、`max_active`、`max_retained`）、首次健康报告；如果节点能够准备并保留多个部署代次，还包含 `generation_management: true`。除非身份与已认证节点匹配，否则 Core 会关闭连接。
 3. Core 记录节点的存在状态，然后回复 `welcome`，其中包含新的 `connection_id` 和当前 `owner_epoch`；对于支持代次管理的节点，还包含 `deployment`：目标 `generation`、其 `specification_digest` 和可空的 `serving_generation`。节点保存更高的所有者 epoch，并拒绝更低的值。
 4. 节点每 10 秒发送一次 `heartbeat`，其中包含 `connection_id`、`owner_epoch` 和健康状态。对于每次心跳，Core 都会再次认证节点凭据并检查所有者 epoch，记录健康状态并回复 `heartbeat_ack`；对于支持代次管理的节点，回复中还包含 `deployment`。任一端连续 35 秒未收到任何帧时都会关闭连接。
@@ -93,7 +93,7 @@ Core 的丢弃授权是回收的必要条件，但并非充分条件。排队和
 
 ## 完全匹配的新安装 {#matched-fresh-installation}
 
-主机程序版本与 Core 选择的 Runtime 版本彼此独立。全新节点从控制台当前版本获取其可执行文件和私有准备器，并从经认证的配置中读取确切的 Runtime 源、镜像身份以及原生运行时和固件摘要。当该 Runtime 较旧时，控制台仍会提供其不可变的 `releases/<source>/` 清单、校验和以及允许列表中的制品：Runtime 辅助程序、固件、seccomp 配置文件和镜像字节都来自所选版本；即使下载期间控制台的当前版本发生变化，制品 URL 仍固定到已验证的清单。
+主机程序版本与 Core 选择的 Runtime 版本彼此独立。全新节点从控制台当前版本获取其可执行文件和私有准备器，并从经认证的配置中读取确切的 Runtime 源、镜像身份以及原生运行时和固件摘要。制品传输使用节点保留身份中的策略：HTTPS，或在该身份记录了 `allow_insecure_origin` 时仅从已登记的明文控制台源地址使用明文 HTTP。当该 Runtime 较旧时，控制台仍会提供其不可变的 `releases/<source>/` 清单、校验和以及允许列表中的制品：Runtime 辅助程序、固件、seccomp 配置文件和镜像字节都来自所选版本；即使下载期间控制台的当前版本发生变化，制品 URL 仍固定到已验证的清单。
 
 所需的保留版本缺失时，安装会被拒绝，而不会替换为当前 Runtime；仅包含另一个 Runtime 的本地捆绑包也会导致拒绝。所有这些拒绝都发生在安装器写入节点身份、导入 Runtime、注册节点或启动服务之前。
 

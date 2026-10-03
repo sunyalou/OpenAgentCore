@@ -160,6 +160,61 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaises(distribution.DistributionError):
             distribution.obtain_artifact(self.manifest, 'native/bin/node', self.root / 'link')
 
+    def test_origin_normalization(self):
+        self.assertEqual(distribution.origin_of('http://10.20.30.40'), ('http', '10.20.30.40', 80))
+        self.assertEqual(distribution.origin_of('https://10.20.30.40:8443/x'), ('https', '10.20.30.40', 8443))
+        self.assertIsNone(distribution.origin_of('file:///tmp/x'))
+
+    def test_insecure_origin_admits_only_the_configured_plaintext_origin(self):
+        source = distribution.origin_of('http://10.20.30.40')
+        for value in ('http://10.20.30.40/artifact', 'https://release.example/artifact'):
+            self.assertEqual(distribution.safe_url(value, True, source), value)
+        # Cross-host plaintext, a plaintext downgrade and every default-off call stay refused.
+        for value in ('http://10.20.30.41/artifact', 'http://release.example/artifact'):
+            with self.assertRaises(distribution.DistributionError):
+                distribution.safe_url(value, True, source)
+        with self.assertRaises(distribution.DistributionError):
+            distribution.safe_url('http://10.20.30.40/artifact', False, source)
+        with self.assertRaises(distribution.DistributionError):
+            distribution.safe_url('http://10.20.30.40/artifact', True, distribution.origin_of('https://10.20.30.40'))
+
+    def test_insecure_origin_is_projected_to_the_artifact_transfer(self):
+        self.manifest['artifact_base_url'] = 'http://10.20.30.40/node-install/artifacts'
+        captured = []
+
+        def download(url, partial, entry, logical_path, allow_insecure_origin=False, source_origin=None):
+            captured.append((url, allow_insecure_origin, source_origin))
+            partial.write_bytes(self.data)
+
+        with patch.object(distribution, 'download_partial', side_effect=download):
+            target = self.root / 'node'
+            distribution.obtain_artifact(self.manifest, 'native/bin/node', target,
+                                         allow_insecure_origin=True, source_url='http://10.20.30.40')
+            self.assertEqual(target.read_bytes(), self.data)
+        self.assertEqual(captured, [(
+            'http://10.20.30.40/node-install/artifacts/' + self.manifest['artifacts']['native/bin/node']['filename'],
+            True, ('http', '10.20.30.40', 80))])
+        with patch.object(distribution, 'download_partial') as download:
+            with self.assertRaisesRegex(distribution.DistributionError, 'HTTPS'):
+                distribution.obtain_artifact(self.manifest, 'native/bin/node', self.root / 'other')
+        download.assert_not_called()
+
+    def test_insecure_origin_redirect_stays_same_origin_and_never_downgrades(self):
+        source = distribution.origin_of('http://10.20.30.40')
+        redirect = distribution.ArtifactRedirect(True, source)
+        request = distribution.urllib.request.Request('http://10.20.30.40/node',
+                                                      headers={'Range': 'bytes=5-', 'If-Range': 'etag'})
+        allowed = redirect.redirect_request(request, None, 307, '', {}, 'http://10.20.30.40/release/file')
+        self.assertEqual(allowed.full_url, 'http://10.20.30.40/release/file')
+        self.assertEqual(dict((k.lower(), v) for k, v in allowed.header_items()),
+                         {'range': 'bytes=5-', 'if-range': 'etag'})
+        for target in ('http://10.20.30.41/file', 'http://127.0.0.1/file'):
+            with self.subTest(target=target), self.assertRaises(distribution.ArtifactError):
+                redirect.redirect_request(request, None, 302, '', {}, target)
+        secure = distribution.urllib.request.Request('https://10.20.30.40/node')
+        with self.assertRaises(distribution.ArtifactError):
+            redirect.redirect_request(secure, None, 302, '', {}, 'http://10.20.30.40/file')
+
 
     def test_artifact_downgrades_and_metadata_redirects_are_refused(self):
         self.status = 302
@@ -313,6 +368,17 @@ class ManifestSourceTests(unittest.TestCase):
         with patch.object(distribution.urllib.request, 'build_opener', return_value=opener):
             loaded = distribution.load_manifest(source_url='https://console.example')
         self.assertEqual(loaded['artifact_base_url'], 'https://console.example/node-install/artifacts')
+
+    def test_insecure_origin_metadata_requires_the_switch(self):
+        manifest = json.dumps({'source_commit': 'a' * 40, 'platform': 'linux/amd64', 'artifact_base_url': ''}).encode()
+        sums = (hashlib.sha256(manifest).hexdigest() + '  manifest.json\n').encode()
+        files = {'SHA256SUMS': sums, 'manifest.json': manifest}
+        opener = Mock(open=lambda url, timeout: io.BytesIO(files[url.rsplit('/', 1)[1]]))
+        with patch.object(distribution.urllib.request, 'build_opener', return_value=opener):
+            loaded = distribution.load_manifest(source_url='http://10.20.30.40', allow_insecure_origin=True)
+        self.assertEqual(loaded['artifact_base_url'], 'http://10.20.30.40/node-install/artifacts')
+        with self.assertRaisesRegex(distribution.DistributionError, 'HTTPS'):
+            distribution.load_manifest(source_url='http://10.20.30.40')
 
 
 if __name__ == '__main__':

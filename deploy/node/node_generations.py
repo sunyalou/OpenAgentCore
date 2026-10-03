@@ -353,7 +353,8 @@ def runtime_files(root, value, args, manifest, sums, installer):
         if name == "runtime/seccomp.json":
             installer.download(args.source_url, name, release, sums[name], prefix="releases/" + source + "/")
         else:
-            installer.distribution.obtain_artifact(manifest, name, release / name)
+            installer.distribution.obtain_artifact(manifest, name, release / name, None,
+                                                   getattr(args, "allow_insecure_origin", False), args.source_url)
             os.chmod(release / name, 0o700)
     atomic_json(release / "manifest.json", manifest)
     return release
@@ -361,6 +362,9 @@ def runtime_files(root, value, args, manifest, sums, installer):
 
 def prepare(args, installer):
     root, identity = owned_root(args, installer)
+    # The retained identity is the single home of the enrollment policy; project it
+    # onto this helper invocation so every download below uses the same decision.
+    args.allow_insecure_origin = bool(identity.get("allow_insecure_origin", False))
     with installer.install_lock(root), collection_lease(
             root, args.generation, installer, marker_identity(args),
             initialize=args.generation not in retained_configs(root, installer)
@@ -400,7 +404,7 @@ def prepare(args, installer):
             settings = installer.private_json(root / "preparation.json")
             # The retained identity records the enrollment policy; a node enrolled
             # with allow_insecure_origin may keep an http source_url in preparation.json.
-            args.source_url = installer.origin(settings["source_url"], bool(identity.get("allow_insecure_origin", False)))
+            args.source_url = installer.origin(settings["source_url"], args.allow_insecure_origin)
             args.bundle = None
             manifest, sums = installer.metadata(args.source_url, prefix="releases/" + runtime["source_commit"] + "/")
             try:

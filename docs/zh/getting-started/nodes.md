@@ -1,7 +1,7 @@
 ---
 title: "添加和管理节点"
 source: docs/getting-started/nodes.md
-source_hash: f7bfd1ac05cbed8a1f31badee219164c5e1a16aa897e89551abeb8b8d0010215
+source_hash: 029e420d682563c7b948c14172fe3e463b7dfccecc2c972fb2537c8e372cb85f
 ---
 
 节点是一台 Linux 主机，在沙箱后端为 Docker 或 microsandbox 时，为 Core 托管 Session 运行沙箱。Core 将新 Session 分配给有空余容量的节点；节点创建沙箱，沙箱回连 Core。E2B 不需要节点。应用为自己的 Session 连接的机器是[自托管执行器](self-hosted.md)，而不是节点。
@@ -10,7 +10,7 @@ source_hash: f7bfd1ac05cbed8a1f31badee219164c5e1a16aa897e89551abeb8b8d0010215
 
 ## 添加节点前 {#before-you-add-a-node}
 
-- **Core 已有主机及沙箱可访问的 HTTPS 公开 URL。** 节点从 Core 控制台下载文件，并通过 `public_url` 连接 Core。设置前，Add node 显示 *Set a public HTTPS address before adding nodes*；参阅[配置公开地址](install.md#configure-the-domain-and-https)。
+- **Core 已有主机及沙箱可访问的 HTTPS 公开 URL。** 节点从 Core 控制台下载文件，并通过 `public_url` 连接 Core。设置前，Add node 显示 *Set a public HTTPS address before adding nodes*；参阅[配置公开地址](install.md#configure-the-domain-and-https)。使用 `OAC_ALLOW_INSECURE_ORIGIN=1` 的开发安装可以改用非回环的 `http://` URL：生成的命令会携带 `--allow-insecure-origin`，制品下载与节点连接均为明文。
 - **沙箱配置已保存。** 打开 **System** → **Manage sandbox configuration**，选择 **Own machines**、后端和沙箱规格，最后选择 **Save configuration**。要更改已保存的配置，先选择 **Reset deployment**。同一安装的所有节点使用同一后端。
 - **控制台能提供节点文件。** 节点从控制台下载 Runtime 和提供商文件；控制台缺少文件时重定向到发行下载地址。节点依据发行清单检查各文件的大小和 SHA-256。因此节点主机需要能访问发行下载地址。缺少文件时，Add node 显示 *This console has no node files for …*。
 
@@ -152,6 +152,8 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
    ```
 
 节点移除后，Core 拒绝其凭据时，`oac-node run` 以状态 78 退出；配置管理器不要在该情况下重启（systemd：`RestartPreventExitStatus=78`）。
+
+为开发或测试而在非回环 `http://` 源地址上注册时，在 `oac-node register` 上添加 `--allow-insecure-origin`。节点随后以明文 HTTP 下载制品并保持 `ws://` 连接；`oac-node run` 不接受该 flag，而使用注册时记录的策略。明文 HTTP 不提供传输加密，不适用于生产环境。
 
 节点向外连接 Core；Core 不需要通过 SSH 或 Docker TCP 访问主机。注册在联系 Core 前先将节点身份写入状态目录，因此响应丢失时可以复用同一身份重试。状态目录放在持久存储上，仅节点账号可访问，每次只由一个进程使用。不要复制到其他目录或主机：节点已有连接打开时，Core 拒绝第二个连接。提供商文件不能修改节点容量或沙箱配置。Core 在注册及每次连接时比较摘要；文件不匹配的节点在恢复批准配置前不接收工作。
 

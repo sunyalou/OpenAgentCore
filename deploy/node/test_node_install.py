@@ -365,10 +365,10 @@ class NodeInstallTests(unittest.TestCase):
         self.args.generation = 2
         self.args.specification_digest = config["specification_digest"]
         real_obtain = installer.distribution.obtain_artifact
-        def interrupted(manifest, name, path):
+        def interrupted(manifest, name, path, offline_root=None, allow_insecure_origin=False, source_url=None):
             if name == installer.MICRO[1]:
                 raise OSError("interrupted partial download")
-            return real_obtain(manifest, name, path)
+            return real_obtain(manifest, name, path, offline_root, allow_insecure_origin, source_url)
         with mock.patch.object(installer.node_spec, "fetch", return_value=config):
             with mock.patch.object(installer.distribution, "obtain_artifact", side_effect=interrupted):
                 with self.assertRaises(OSError):

@@ -245,5 +245,35 @@ class CollectionTests(unittest.TestCase):
         self.assertTrue((foreign / "artifact").exists())
 
 
+class RuntimeFilesPolicyTests(unittest.TestCase):
+    def test_runtime_files_projects_the_enrollment_policy_to_the_download(self):
+        source = "b" * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release = root / "releases" / source
+            (release / "runtime").mkdir(parents=True)
+            value = {"docker": {"seccomp_file": str(release / "runtime/seccomp.json")}}
+            args = SimpleNamespace(source_url="http://10.20.30.40", provider="docker", allow_insecure_origin=True,
+                                   configuration={"specification": {"runtime": {"source_commit": source}}})
+            entry = {"filename": "oac-" + source + "-linux-amd64-native-bin-node", "sha256": "a" * 64, "size": 1}
+            manifest = {"source_commit": source, "artifact_base_url": "http://10.20.30.40/node-install/releases/" + source + "/artifacts",
+                        "artifacts": {"native/bin/node": entry}}
+            fake = mock.Mock()
+            fake.provider_assets.artifacts.return_value = ["native/bin/node"]
+            fake.private_json.return_value = None
+            fake.existing_file.return_value = False
+            fake.distribution.artifact.return_value = entry
+            captured = []
+
+            def obtain(manifest_arg, name, path, offline_root=None, allow_insecure_origin=False, source_url=None):
+                captured.append((name, allow_insecure_origin, source_url))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"x")
+
+            fake.distribution.obtain_artifact.side_effect = obtain
+            self.assertEqual(node_generations.runtime_files(root, value, args, manifest, {}, fake), release)
+            self.assertEqual(captured, [("native/bin/node", True, "http://10.20.30.40")])
+
+
 if __name__ == "__main__":
     unittest.main()

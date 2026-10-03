@@ -8,7 +8,7 @@ You add a node by generating a command in Web and running it on the host. The [s
 
 ## Before you add a node
 
-- **Core has an HTTPS public URL** that the host and its sandboxes can reach. Nodes download from Core's console and connect to Core at `public_url`. Until it is set, Add node says *Set a public HTTPS address before adding nodes*; see [Configure the public address](./install.md#configure-the-domain-and-https).
+- **Core has an HTTPS public URL** that the host and its sandboxes can reach. Nodes download from Core's console and connect to Core at `public_url`. Until it is set, Add node says *Set a public HTTPS address before adding nodes*; see [Configure the public address](./install.md#configure-the-domain-and-https). A development installation with `OAC_ALLOW_INSECURE_ORIGIN=1` may use a non-loopback `http://` URL instead: the generated command then carries `--allow-insecure-origin`, and both the artifact download and the node connection are plaintext.
 - **The sandbox configuration is saved.** Open **System** → **Manage sandbox configuration**, choose **Own machines**, the backend and a sandbox size, and **Save configuration**. To change a saved configuration, choose **Reset deployment** first. Every node of an installation uses that backend.
 - **The console can serve the node files.** Nodes download their Runtime and provider files from the console, which redirects to the release for files it does not hold, and check each file's size and SHA-256 against the release manifest. Node hosts therefore need access to the release. Without the files, Add node says *This console has no node files for …*.
 
@@ -150,6 +150,8 @@ Use manual registration when you manage the node's files and service yourself in
    ```
 
 `oac-node run` exits with status 78 once Core rejects its credential, after the node is removed; configure the supervisor not to restart it then (systemd: `RestartPreventExitStatus=78`).
+
+To register over a non-loopback `http://` origin for development or testing, add `--allow-insecure-origin` to `oac-node register`. The node then downloads artifacts and keeps a `ws://` connection over plaintext HTTP, and `oac-node run` takes no such flag: it uses the policy recorded at registration. Plaintext HTTP carries no transport encryption and is not for production.
 
 The node connects out to Core; Core needs no SSH or Docker TCP access to the host. Registration writes the node's identity to the state directory before contacting Core, so a lost response can be retried under the same identity. Keep the state directory on persistent storage, private to the node's account and used by one process at a time. Never copy it to another directory or host: Core refuses a second connection for a node while the first is open. The provider file can't change the node's capacity or sandbox configuration. Core compares its digest at registration and on every connection, and a node whose file differs takes no work until the approved configuration is restored.
 
