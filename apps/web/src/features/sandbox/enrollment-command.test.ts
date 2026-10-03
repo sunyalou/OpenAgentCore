@@ -19,6 +19,19 @@ printf '==> Verifying node installer...\\n' &&
 printf '%s  %s\\n' '${digest}' "$d/node-install.pyz" | sha256sum -c --status &&
 printf '%s\\n' 'secret'\\''onetime' | $s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color} --enrollment-token-stdin --source-url 'https://console.example' --core-url 'https://core.example' --provider 'docker' --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f')`);
   });
+  it("appends --allow-insecure-origin right after --core-url when the switch is on", () => {
+    const command = nodeInstallCommand({ token: "secret'onetime", coreUrl: "http://10.0.0.5:8080", sourceUrl: "http://10.0.0.5:8080", provider: "docker", installationId: "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f", scriptDigest: digest, allowInsecureOrigin: true });
+    expect(command).toContain("--core-url 'http://10.0.0.5:8080' --allow-insecure-origin --provider 'docker'");
+    // The flag is forwarded once, and only in the installer's own argument list.
+    expect(command.match(/--allow-insecure-origin/g)).toHaveLength(1);
+    expect(command.endsWith("--provider 'docker' --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f')")).toBe(true);
+  });
+  it("leaves the command byte-for-byte unchanged when the switch is off or omitted", () => {
+    const args = { token: "secret'onetime", coreUrl: "https://core.example", sourceUrl: "https://console.example", provider: "docker" as const, installationId: "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f", scriptDigest: digest };
+    expect(nodeInstallCommand({ ...args, allowInsecureOrigin: false })).toBe(install());
+    expect(nodeInstallCommand(args)).toBe(install());
+    expect(nodeInstallCommand({ ...args, allowInsecureOrigin: false })).not.toContain("--allow-insecure-origin");
+  });
   it("creates the exact uninstall commands, with no token", () => {
     const uninstall = () => nodeUninstallCommand({ sourceUrl: "https://console.example", installationId: "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f", scriptDigest: digest });
     expect(uninstall()).toBe(` (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
