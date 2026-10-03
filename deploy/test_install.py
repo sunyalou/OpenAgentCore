@@ -13,7 +13,7 @@ INSTALL = ROOT / "deploy/install.sh"
 
 
 class InstallScriptTests(unittest.TestCase):
-    def install(self, root, *args, compose_up=0):
+    def install(self, root, *args, compose_up=0, check_config=0, init=0):
         bin_dir = root / "bin"
         bin_dir.mkdir(exist_ok=True)
         log = root / "docker.log"
@@ -22,6 +22,17 @@ class InstallScriptTests(unittest.TestCase):
             printf '%s\\n' "$*" >> {log}
             if [ "$1" = compose ] && [ "$2" = version ]; then printf 'v2.29.1\\n'; exit 0; fi
             if [ "$1" = compose ] && [ "$2" = cp ]; then printf '#!/bin/sh\\n' > ./oac; exit 0; fi
+            if [ "$1" = compose ] && [ "$2" = run ]; then
+              case "$*" in
+                *check-config*)
+                  if [ {check_config} -ne 0 ]; then
+                    printf '%s\\n' 'OAC_PUBLIC_URL must be a canonical HTTPS origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted only for a loopback host' >&2
+                  fi
+                  exit {check_config}
+                  ;;
+              esac
+              exit {init}
+            fi
             if [ "$1" = compose ] && [ "$2" = up ]; then exit {compose_up}; fi
             exit 0
             """))
@@ -50,6 +61,48 @@ class InstallScriptTests(unittest.TestCase):
             self.assertFalse((root / "oac").exists(), "a failed first start must remove the directory")
             self.assertIn("compose pull", recorded)
             self.assertIn("compose up -d --wait", recorded)
+
+    def test_initialization_and_configuration_check_run_before_the_stack_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, recorded = self.install(root, "--public-url", "https://core.example")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            lines = recorded.splitlines()
+            initialize = next(index for index, line in enumerate(lines) if line == "compose run --rm -T init")
+            check = next(index for index, line in enumerate(lines) if line.endswith("core check-config"))
+            up = next(index for index, line in enumerate(lines) if line == "compose up -d --wait")
+            self.assertLess(initialize, check, recorded)
+            self.assertLess(check, up, recorded)
+            self.assertIn("--no-deps", lines[check])
+            self.assertIn("--entrypoint /usr/local/bin/oac-core", lines[check])
+
+    def test_a_rejected_public_url_fails_without_reporting_success(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, recorded = self.install(root, "--public-url", "http://10.0.0.5:8080", check_config=1)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("plain HTTP is accepted only for a loopback host", completed.stderr)
+            self.assertNotIn("OpenAgentCore is running.", completed.stdout)
+            self.assertNotIn("compose up -d --wait", recorded)
+            self.assertFalse((root / "oac").exists(), "a rejected configuration must remove the directory")
+
+    def test_the_insecure_origin_switch_keeps_the_install_succeeding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, _ = self.install(root, "--public-url", "http://10.0.0.5:8080", "--allow-insecure-origin")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("OpenAgentCore is running.", completed.stdout)
+            self.assertIn("Core key:", completed.stdout)
+
+    def test_a_failed_initialization_stops_before_the_stack_starts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, recorded = self.install(root, "--public-url", "https://core.example", init=1)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertNotIn("OpenAgentCore is running.", completed.stdout)
+            self.assertNotIn("check-config", recorded)
+            self.assertNotIn("compose up -d --wait", recorded)
+            self.assertFalse((root / "oac").exists())
 
     def test_env_holds_only_the_installation_choices(self):
         with tempfile.TemporaryDirectory() as temporary:
