@@ -25,12 +25,15 @@ const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HT
 /**
  * Adds this host as a node. The one-time token reaches the installer only on
  * standard input (`printf` is a shell builtin), never in an argument, the
- * environment or sudo's command line.
+ * environment or sudo's command line. `allowInsecureOrigin` forwards the
+ * installer's `--allow-insecure-origin`, which lets a plain-HTTP Core origin
+ * enroll; it stays off unless the caller explicitly asks for it, so the default
+ * command is byte-for-byte unchanged.
  */
-export function nodeInstallCommand({ token, coreUrl, sourceUrl, provider, installationId, scriptDigest }: {
-  token: string; coreUrl: string; sourceUrl: string; provider: "docker" | "microsandbox"; installationId: string; scriptDigest: string;
+export function nodeInstallCommand({ token, coreUrl, sourceUrl, provider, installationId, scriptDigest, allowInsecureOrigin = false }: {
+  token: string; coreUrl: string; sourceUrl: string; provider: "docker" | "microsandbox"; installationId: string; scriptDigest: string; allowInsecureOrigin?: boolean;
 }): string {
-  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
+  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)}${allowInsecureOrigin ? " --allow-insecure-origin" : ""} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
 }
 
 /**

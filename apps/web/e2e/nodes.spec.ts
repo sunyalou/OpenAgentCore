@@ -172,6 +172,8 @@ test("offers a plaintext HTTP node command with a warning only when allow_insecu
   const field = add.getByLabel("One-time enrollment command", { exact: true });
   await expect(field).toHaveValue(/curl [^\n]* 'http:\/\/10\.0\.0\.5:8080\/node-install\/node-install\.pyz' /);
   await expect(field).toHaveValue(/ --source-url 'http:\/\/10\.0\.0\.5:8080' --core-url 'http:\/\/10\.0\.0\.5:8080' /);
+  // The switch travels with the command: the installer is told to accept the plain-HTTP Core origin.
+  await expect(field).toHaveValue(/ --core-url 'http:\/\/10\.0\.0\.5:8080' --allow-insecure-origin /);
 });
 
 test("removes a node after confirmation", async ({ page, request }) => {
