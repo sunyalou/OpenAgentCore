@@ -16,6 +16,7 @@ import (
 )
 
 func TestEnvironmentConnectionURL(t *testing.T) {
+	t.Setenv(allowInsecureOriginEnv, "")
 	for _, valid := range []string{"wss://runtime.example/api/v1/agent-daemon/ws", "ws://127.0.0.1:123/api/v1/agent-daemon/ws", "ws://[::1]:123/api/v1/agent-daemon/ws"} {
 		base, err := environmentBase(valid)
 		if err != nil || !strings.HasSuffix(base, "/api/v1") {
@@ -26,6 +27,41 @@ func TestEnvironmentConnectionURL(t *testing.T) {
 		if _, err := environmentBase(invalid); err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatal("invalid URL accepted or disclosed")
 		}
+	}
+}
+
+// The insecure-origin switch is the single relaxation for a non-loopback
+// plaintext ws:// Environment remote. Only "1" enables it; every other value,
+// including unset, keeps the default rejection byte-for-byte.
+func TestEnvironmentConnectionURLInsecureOriginSwitch(t *testing.T) {
+	const remote = "ws://runtime.example:8080/api/v1/agent-daemon/ws"
+	const rejected = "connect: Environment remote_url requires TLS outside loopback"
+	for _, value := range []string{"", "0", "true", "yes", " 1"} {
+		t.Setenv(allowInsecureOriginEnv, value)
+		if _, err := environmentBase(remote); err == nil || err.Error() != rejected {
+			t.Fatalf("switch %q did not keep the default rejection: %v", value, err)
+		}
+	}
+	t.Setenv(allowInsecureOriginEnv, "1")
+	base, err := environmentBase(remote)
+	if err != nil || base != "http://runtime.example:8080/api/v1" {
+		t.Fatalf("enabled switch rejected a non-loopback ws: %q %v", base, err)
+	}
+	// Loopback ws and wss are unaffected by the switch.
+	for _, valid := range []string{"ws://127.0.0.1:123/api/v1/agent-daemon/ws", "ws://[::1]:123/api/v1/agent-daemon/ws", "wss://runtime.example/api/v1/agent-daemon/ws"} {
+		if _, err := environmentBase(valid); err != nil {
+			t.Fatalf("valid URL rejected with the switch enabled: %v", err)
+		}
+	}
+}
+
+// Native onboarding derives its remote URL from the installation endpoint and
+// must reuse the same relaxation, not a second copy of the rule.
+func TestPrepareOnboardingSharesInsecureOriginRule(t *testing.T) {
+	t.Setenv(allowInsecureOriginEnv, "")
+	o := &nativeInstallOptions{OnboardURL: "http://runtime.example:8080/api/v1/agent-daemon/installation", Authorization: "private-canary"}
+	if err := prepareOnboarding(o); err == nil || err.Error() != "connect: Environment remote_url requires TLS outside loopback" {
+		t.Fatalf("onboarding did not reuse the Environment remote rule: %v", err)
 	}
 }
 
