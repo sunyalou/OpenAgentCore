@@ -23,12 +23,18 @@ function hasExplicitUserInfo(candidate: string): boolean {
   return authority.includes("@");
 }
 
-export function isValidDirectCoreBaseUrl(value: string): boolean {
+/**
+ * A direct Core base URL is safe when it is HTTPS, or plain HTTP on a loopback
+ * host. `allowInsecure` additionally accepts a non-loopback HTTP URL: the
+ * development-only `allow_insecure_origin` switch, never the default. TLS
+ * certificate verification is a separate concern and is never relaxed here.
+ */
+export function isValidDirectCoreBaseUrl(value: string, allowInsecure = false): boolean {
   try {
     const candidate = value.trim();
     if (candidate.includes("?") || candidate.includes("#") || hasExplicitUserInfo(candidate)) return false;
     const url = new URL(candidate);
-    const secureTransport = url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHostname(url.hostname));
+    const secureTransport = url.protocol === "https:" || (url.protocol === "http:" && (allowInsecure || isLoopbackHostname(url.hostname)));
     return secureTransport && !url.username && !url.password && !url.search && !url.hash;
   } catch {
     return false;

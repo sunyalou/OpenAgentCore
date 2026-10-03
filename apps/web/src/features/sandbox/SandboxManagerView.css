@@ -11,6 +11,15 @@
 .sandbox-summary dt { font-size: 12px; color: var(--ink-3); margin-bottom: 4px; }
 .sandbox-summary dd { margin: 0; color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
 .sandbox-error { color: var(--danger) !important; }
+/* A development installation with allow_insecure_origin: the command is plain HTTP. */
+.sandbox-insecure-origin {
+  padding: 10px 12px;
+  color: var(--fg) !important;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, var(--line));
+  border-radius: 8px;
+}
 .sandbox-empty { display: grid; justify-items: center; gap: 12px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; padding: 56px 24px; color: var(--fg-muted); }
 .sandbox-empty h3 { color: var(--fg); font-size: 16px; margin: 0; font-weight: 500; }
 .sandbox-empty p { max-width: 320px; font-size: 13px; }
