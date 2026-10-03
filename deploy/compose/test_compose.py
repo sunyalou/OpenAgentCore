@@ -111,5 +111,39 @@ class ComposeTests(unittest.TestCase):
             input=json.dumps(transformed), text=True, check=True)
 
 
+class RenderImageReferenceTests(unittest.TestCase):
+    """Rendered image defaults must match the repository and tag a release published."""
+
+    values = {
+        'REVISION': 'd' * 40,
+        'RELEASE_BASE': 'https://example.com/releases/v1/',
+        'ARCHIVE_CHECKSUM': 'e' * 64,
+    }
+
+    def rendered(self, **extra):
+        return render_compose.render({**self.values, **extra})
+
+    def test_defaults_keep_the_upstream_latest_images(self):
+        text = self.rendered()
+        for name in ('core', 'web', 'ingress'):
+            self.assertIn('${OAC_IMAGE_' + name.upper() + ':-ghcr.io/minimax-ai/openagentcore/' + name + ':latest}', text)
+
+    def test_fork_repository_and_release_tag_replace_the_defaults(self):
+        tag = 'build-' + 'a' * 40
+        text = self.rendered(IMAGE_REPOSITORY='ghcr.io/sunyalou/openagentcore', IMAGE_TAG=tag)
+        for name in ('core', 'web', 'ingress'):
+            self.assertIn('${OAC_IMAGE_' + name.upper() + ':-ghcr.io/sunyalou/openagentcore/' + name + ':' + tag + '}', text)
+
+    def test_invalid_image_repository_or_tag_is_refused(self):
+        for repository in ('', 'ghcr.io', 'ghcr.io/Fork/Repo', 'ghcr.io/fork/repo:tag'):
+            with self.subTest(repository=repository):
+                with self.assertRaisesRegex(ValueError, 'IMAGE_REPOSITORY'):
+                    self.rendered(IMAGE_REPOSITORY=repository)
+        for tag in ('', ':bad', 'has space', 'a' * 129):
+            with self.subTest(tag=tag):
+                with self.assertRaisesRegex(ValueError, 'IMAGE_TAG'):
+                    self.rendered(IMAGE_TAG=tag)
+
+
 if __name__ == '__main__':
     unittest.main()
