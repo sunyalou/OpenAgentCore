@@ -33,6 +33,19 @@ func environmentClient() *http.Client {
 	}}
 }
 
+// allowInsecureOriginEnv is the single switch that permits a non-loopback
+// plaintext ws:// Environment remote for development and testing. The installer
+// derives it from the top-level allow_insecure_origin setting in config.json;
+// Runtime reads only that derived value and never re-reads config.json.
+const allowInsecureOriginEnv = "OAC_ALLOW_INSECURE_ORIGIN"
+
+// insecureOriginAllowed reports whether the operator explicitly enabled
+// non-loopback plaintext origins. Only "1" enables it; any other value,
+// including unset, keeps the default TLS requirement.
+func insecureOriginAllowed() bool {
+	return os.Getenv(allowInsecureOriginEnv) == "1"
+}
+
 func environmentBase(remote string) (string, error) {
 	u, err := url.Parse(remote)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawPath != "" || u.Path != "/api/v1/agent-daemon/ws" || strings.TrimSpace(remote) != remote {
@@ -43,7 +56,7 @@ func environmentBase(remote string) (string, error) {
 		u.Scheme = "https"
 	case "ws":
 		ip := net.ParseIP(u.Hostname())
-		if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) && !insecureOriginAllowed() {
 			return "", errors.New("connect: Environment remote_url requires TLS outside loopback")
 		}
 		u.Scheme = "http"
