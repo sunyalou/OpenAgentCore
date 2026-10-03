@@ -44,3 +44,26 @@ func TestBootstrapAddressUsesPublicOrigin(t *testing.T) {
 		})
 	}
 }
+
+func TestRuntimeWebSocketURL(t *testing.T) {
+	for _, c := range []struct {
+		coreURL string
+		want    string
+	}{
+		{"https://core.example", "wss://core.example/api/v1/agent-daemon/ws"},
+		{"https://core.example:8443", "wss://core.example:8443/api/v1/agent-daemon/ws"},
+		{"http://127.0.0.1:8091", "ws://127.0.0.1:8091/api/v1/agent-daemon/ws"},
+		{"http://10.0.0.5:8080", "ws://10.0.0.5:8080/api/v1/agent-daemon/ws"},
+		{"http://[2001:db8::1]:8080", "ws://[2001:db8::1]:8080/api/v1/agent-daemon/ws"},
+	} {
+		got, err := runtimeWebSocketURL(c.coreURL)
+		if err != nil || got != c.want {
+			t.Errorf("runtimeWebSocketURL(%q) = %q, %v; want %q", c.coreURL, got, err, c.want)
+		}
+	}
+	for _, coreURL := range []string{"ftp://core.example", "core.example", "https://user:secret@core.example"} {
+		if _, err := runtimeWebSocketURL(coreURL); err == nil {
+			t.Errorf("runtimeWebSocketURL(%q) accepted", coreURL)
+		}
+	}
+}

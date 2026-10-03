@@ -78,6 +78,7 @@ func Settings() ([]api.InstallationSetting, error) {
 	}
 	return []api.InstallationSetting{
 		setting("public_url", publicValue, nil, true, []string{"core", "web"}),
+		setting("allow_insecure_origin", allowInsecureOrigin(), false, true, []string{"core"}),
 		setting("log.level", level, "info", true, []string{"core", "web"}),
 		setting("log.format", format, "auto", true, []string{"core", "web"}),
 		setting("log.add_source", addSource, false, true, []string{"core", "web"}),
@@ -106,10 +107,24 @@ func PublicURL() (string, error) {
 	if value == "" {
 		return "", nil
 	}
+	if allowInsecureOrigin() {
+		if deployment.ValidateCoreURLAllowingInsecure(value) != nil {
+			return "", configErr("OAC_PUBLIC_URL must be a canonical origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted because OAC_ALLOW_INSECURE_ORIGIN is set")
+		}
+		return value, nil
+	}
 	if deployment.ValidateCoreURL(value) != nil {
 		return "", configErr("OAC_PUBLIC_URL must be a canonical HTTPS origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted only for a loopback host")
 	}
 	return value, nil
+}
+
+// allowInsecureOrigin reads OAC_ALLOW_INSECURE_ORIGIN, the single switch that
+// permits a non-loopback plain HTTP public origin for development and testing.
+// The deployment side owns the value; only "1" enables it, and Core never
+// infers it from OAC_PUBLIC_URL or reads another variable.
+func allowInsecureOrigin() bool {
+	return os.Getenv("OAC_ALLOW_INSECURE_ORIGIN") == "1"
 }
 
 // InstallationID reads the file named by OAC_INSTALLATION_ID_FILE. The ID
