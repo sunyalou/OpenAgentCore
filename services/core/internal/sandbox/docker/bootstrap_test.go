@@ -60,3 +60,26 @@ func TestBootstrapDeliversOnlyPublicConnectionInput(t *testing.T) {
 		t.Fatal("missing Runtime input")
 	}
 }
+
+// Docker before 28 fails a copyUIDGID request when the container's Config.User
+// is a "uid:gid" pair, because it runs a passwd lookup for the whole string.
+// Bootstrap must not depend on that lookup.
+func TestBootstrapDoesNotRequireContainerUserLookup(t *testing.T) {
+	b := sandbox.Bootstrap{CoreURL: "https://core.example/api/v1", DeviceID: "da912024-1543-4242-a2c1-5f4f7ebbc6c7", Credential: "test-secret"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("copyUIDGID") != "" {
+			http.Error(w, `Handler for PUT /containers/test/archive returned error: getent unable to find entry "1000:1000" in passwd database`, http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+	c, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.52"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := (&Provider{client: c}).bootstrap(t.Context(), "test", b); err != nil {
+		t.Fatal(err)
+	}
+}
