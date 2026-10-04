@@ -60,6 +60,11 @@
     "reason": "Official upstream documentation URLs are external protocol references."
   },
   {
+    "path": "docs/zh/research/openai-agent-sdk.md",
+    "regex": "\\{#part-a-—-client-beta-agents-the-hosted-agents-api\\}",
+    "reason": "The explicit Chinese heading anchor must equal the English page's generated anchor; it is a URL fragment, not an installed identifier."
+  },
+  {
     "path": "services/core/internal/credentialcrypto/*.go",
     "regex": "parsar\\.agents-api\\.(?:agent-model-execution\\.v1|credential(?:-fingerprint\\.v1)?|deployment-model-provider\\.v1|environment-file|environment-setup|session-model-execution\\.v1|sandbox-deployment\\.v1|skill)",
     "reason": "These exact authenticated encryption domain/AAD strings must remain stable to decrypt existing stored credentials and assets."
