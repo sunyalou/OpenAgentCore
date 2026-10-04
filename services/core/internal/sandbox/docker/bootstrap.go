@@ -49,6 +49,12 @@ func copyRuntimeFiles(ctx context.Context, c *client.Client, id, path string, en
 	if e := writer.Close(); e != nil {
 		return e
 	}
-	_, e := c.CopyToContainer(ctx, id, client.CopyToContainerOptions{DestinationPath: path, Content: io.Reader(&content), CopyUIDGID: true})
+	// Never ask Docker to copy the container user's UID/GID onto these entries.
+	// Docker before 28 resolves the container's Config.User with a passwd lookup
+	// and passes a "uid:gid" pair through as one user name, so the request fails
+	// ("getent unable to find entry \"1000:1000\"") and the Runtime never receives
+	// its bootstrap file. The tar entries already carry uid/gid 1000, which the
+	// daemon preserves on extraction.
+	_, e := c.CopyToContainer(ctx, id, client.CopyToContainerOptions{DestinationPath: path, Content: io.Reader(&content)})
 	return e
 }
