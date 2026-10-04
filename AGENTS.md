@@ -64,8 +64,36 @@ OpenAgentCore is pre-release. Replace superseded interfaces, execution paths and
 
 ## Working in this repository
 
-- For each new task, create a new Git worktree. Name its directory after that change's commit subject, in kebab-case, beside the checkout. Run `git pull --ff-only` on the base branch, and create the feature branch in that worktree before development.
+- For each new task, create a new Git worktree. Name its directory after that change's commit subject, in kebab-case, beside the checkout. Run `git pull --ff-only` on the base branch, and create the feature branch in that worktree before development. Never commit implementation directly to `main`.
 - After every push to a pull request, wait 60 seconds, then run `gh pr checks` and confirm CI passes. Fix any failure before reporting the work as done.
 - [CONTRIBUTING.md](CONTRIBUTING.md): documentation ownership, repository boundary, workflow, independent review, required checks and naming.
 - [Develop OpenAgentCore](docs/development.md): setup, the repository map, focused checks and [each extension boundary](docs/development.md#choose-an-extension-boundary).
 - [API index](docs/api/index.md): each route's caller and credential.
+
+### Checks
+
+`make check` is the complete local gate and needs Linux, a dedicated PostgreSQL database in `OAC_TEST_DATABASE_URL` and a Playwright browser ([Develop OpenAgentCore](docs/development.md#set-up-a-checkout)). Run the groups a change selects instead of the whole gate ([CI selection policy](docs/maintainers.md#continuous-integration)):
+
+```sh
+python3 scripts/ci_plan.py plan --base origin/main --head HEAD
+```
+
+- `make check-go` covers `internal/`, `apps/daemon/`, `contracts/agents-api/` and the OpenAPI splitter. It does not cover `services/core`; use `make check-core` for Core and `packages/agents-client`.
+- `make check-web-unit` and `make check-web-acceptance` split the Web checks; `make check-distribution` covers the installer and packaging.
+- `make check` fails without `OAC_TEST_DATABASE_URL`; without it, `make check-core` database tests skip locally. The test role needs `CREATE DATABASE` because tests create and drop isolated `oac_*_tests` databases. Never point the suite at an installation or product database ([test database rules](CONTRIBUTING.md#test-database)).
+- Web acceptance uses loopback ports 18092 (fixture) and 4174 (Vite). Set `AGENTS_FIXTURE_PORT` and `AGENTS_WEB_PORT` to run validations in parallel; each browser job keeps one worker ([Validate a change](docs/development.md#validate-a-change)).
+- Install Node dependencies with `pnpm install --frozen-lockfile` (`make node-deps`).
+
+### Generated files
+
+Never hand-edit generated files. Change the source and regenerate ([Contract and schema rules](CONTRIBUTING.md#contract-and-schema-rules)):
+
+- `make openapi` — `contracts/agents-api/openapi.yaml`, `core.openapi.yaml` and `runtime.openapi.yaml` from handler annotations.
+- `make generate-harness-catalog` — `contracts/agents-api/harness-catalog.md` and the generated registrations.
+- `make sqlc-generate` — `services/core/internal/db/sqlc`; `make check-sqlc` compares the committed result.
+- Landed migrations are never edited; add a new migration.
+
+### Workflow
+
+- After validation, have a fresh independent subagent review the complete diff ([review workflow](CONTRIBUTING.md#review)). Give it only the requirements, acceptance criteria, boundaries, repository path and comparison baseline — no implementation summary, self-assessment or earlier findings. Do not use `codex exec` as a substitute reviewer.
+- Build outputs and test artifacts stay under `${OAC_DEV_HOME:-$HOME/.oac}/`; `make build-core` and `make build-daemon` write there ([Standalone Core builds](docs/maintainers.md#standalone-core-builds)).
