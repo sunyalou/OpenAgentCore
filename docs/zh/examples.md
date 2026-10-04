@@ -1,14 +1,15 @@
 ---
 title: "示例"
 source: docs/examples.md
-source_hash: 3c10e50ae47479688cdfac708e82efd73bd5b5f77a2e8b16497a4e02cb14573d
+source_hash: 7d8b37a046418258f16bea3ccaf0ef285db0e7e1608adf08c72c342de9ec0f14
 ---
 
-基于 [Agents API](api/public-agent-api.md)构建的完整应用。每个示例都使用 Project API 密钥连接真实的 Core 安装。
+基于 [Agents API](api/public-agent-api.md)构建的应用和脚本。每个示例都使用 Project API 密钥连接真实的 Core 安装。
 
 | 示例 | 展示内容 |
 | --- | --- |
 | [Parsar Agent 工作台](#parsar-agent-workbench) | 产品 UI：模型、Skills、MCP、可复用 Agent，以及在任意 Runtime 上运行的 Session |
+| [Hosted Agents Python 脚本](#hosted-agents-python-scripts) | 八个小型脚本，覆盖托管 Agents API 从快速入门到 Vaults 和 MCP 的用法 |
 
 ## Parsar Agent 工作台 {#parsar-agent-workbench}
 
@@ -33,6 +34,14 @@ source_hash: 3c10e50ae47479688cdfac708e82efd73bd5b5f77a2e8b16497a4e02cb14573d
 | 历史 | 分页读取 Turns 和 Items | [分页](api/public-agent-api.md#pagination) | [`src/lib/api.ts`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/lib/api.ts) |
 | Skills 和版本 | `/skills`、默认版本 | [Skills](api/public-agent-api.md#skills) | [`src/Skills.tsx`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/Skills.tsx) |
 | 连接自己的机器 | `x_agents_core.installation`、Environment 状态 | [自托管执行](getting-started/self-hosted.md) | [`src/ConnectMachine.tsx`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/ConnectMachine.tsx) |
+
+## Hosted Agents Python 脚本 {#hosted-agents-python-scripts}
+
+面向托管 Agents API 的小型独立脚本，每个脚本对应一个流程：快速入门、异步、流式与取消、文件与 Artifacts、Skills 与模板、Vaults 与 MCP、自托管 Session，以及分页、幂等性和类型化错误。
+
+源码：[`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md)。
+
+按照[示例 README](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md#requirements)运行和配置；该文档也定义其依赖环境和注意事项。每个脚本都会打印它创建的资源，并演示[完整示例](api/public-agent-api.md#worked-examples)中的调用。
 
 ## 添加示例 {#add-an-example}
 

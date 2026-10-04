@@ -2,11 +2,12 @@
 title: "Examples"
 ---
 
-Complete applications built on the [Agents API](./api/public-agent-api.md). Each one runs against a real Core installation with a Project API key.
+Applications and scripts built on the [Agents API](./api/public-agent-api.md). Each one runs against a real Core installation with a Project API key.
 
 | Example | What it shows |
 | --- | --- |
 | [Parsar Agent workbench](#parsar-agent-workbench) | A product UI: models, Skills, MCP, reusable Agents, and Sessions on any runtime |
+| [Hosted Agents Python scripts](#hosted-agents-python-scripts) | Eight small scripts for the hosted Agents API, from quickstart to Vaults and MCP |
 
 ## Parsar Agent workbench
 
@@ -31,6 +32,14 @@ Each feature maps to one part of the API. Read the code next to the guide sectio
 | History | Paging Turns and Items | [Pagination](./api/public-agent-api.md#pagination) | [`src/lib/api.ts`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/lib/api.ts) |
 | Skills and versions | `/skills`, default version | [Skills](./api/public-agent-api.md#skills) | [`src/Skills.tsx`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/Skills.tsx) |
 | Connect your own machine | `x_agents_core.installation`, Environment status | [Self-hosted execution](./getting-started/self-hosted.md) | [`src/ConnectMachine.tsx`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/parsar/src/ConnectMachine.tsx) |
+
+## Hosted Agents Python scripts
+
+Small standalone scripts for the hosted Agents API, one per flow: quickstart, async, streaming and cancellation, files and Artifacts, Skills and templates, Vaults and MCP, self-hosted Sessions, and pagination, idempotency and typed errors.
+
+Source: [`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md).
+
+Run and configure them with the [example README](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md#requirements), which owns its requirements and notes. Each script prints the resources it creates and demonstrates the calls in the [worked examples](./api/public-agent-api.md#worked-examples).
 
 ## Add an example
 

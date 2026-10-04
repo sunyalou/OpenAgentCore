@@ -531,6 +531,228 @@ session = client.beta.agents.sessions.create(environment={"type": "none"}, input
 
 The HTTP path is `/vaults`, with the Beta header. A Session selects credentials from its `vault_ids`, optionally by `credential_id`; the MCP server's URL must match the selected credential's `mcp_server_url` exactly in either case. The [Vaults contract](../../contracts/agents-api/vaults.md) owns selection, errors, OAuth refresh and deletion. An MCP tool's `connection_origin` decides whether Core's side or the workspace connects to the server, and each harness supports a different set: see [MCP connection origin](../../contracts/agents-api/environments.md#public-mcp-connection-origin).
 
+## Worked examples
+
+The examples below combine the resources above into complete flows. They use the pinned SDK and a Core `/v1` endpoint; replace `your-model-id` with a model ID your installation serves. Runnable versions are in [`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md).
+
+### Async client and async tool handlers
+
+```python
+import asyncio
+
+from openai import AsyncOpenAI
+
+client = AsyncOpenAI()  # reads OPENAI_API_KEY and OPENAI_BASE_URL
+
+async def get_weather(args: dict) -> str:
+    return f"Sunny in {args['city']}"
+
+async def main() -> None:
+    agent = await client.beta.agents.create(
+        model="your-model-id",
+        name="Weather assistant",
+        tools=[{
+            "type": "function",
+            "name": "get_weather",
+            "description": "Current weather for a city",
+            "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+        }],
+    )
+    session = await client.beta.agents.sessions.create(
+        environment={"type": "openai_hosted"},
+        agent_id=agent.id,
+    )
+    async with client.beta.agents.sessions.stream(
+        session.id,
+        input="What's the weather in Paris?",
+        tool_handlers={"get_weather": get_weather},
+    ) as stream:
+        async for event in stream:
+            if event.type == "agent.session.turn.output_text.delta":
+                print(event.delta, end="", flush=True)
+
+asyncio.run(main())
+```
+
+Every resource has an `Async*` counterpart with the same parameters, and the async `sessions.stream` helper accepts both plain and awaitable handler results.
+
+### Stream the Session creation
+
+```python
+with client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    agent_id=agent.id,
+    input="Review the repository and summarize the risks.",
+    stream=True,
+) as stream:
+    for event in stream:
+        if event.type == "agent.session.created":
+            print("session", event.session.id)
+        elif event.type == "agent.session.environment.ready":
+            print("environment ready")
+        elif event.type == "agent.session.idle":
+            break
+```
+
+`stream=True` changes only the response type: the same POST returns `Stream[AgentSessionEvent]` instead of `AgentSession`. The stream starts with `agent.session.created` and ends at the first `idle` or `failed`; read the Session afterwards for the outcome ([Stream events](#stream-events)).
+
+Cancel a Turn that is still running:
+
+```python
+client.beta.agents.sessions.events.create(
+    session.id,
+    events=[{"type": "agent.session.input.cancel"}],
+)
+```
+
+The Turn reaches `cancelled` later; this request returning does not mean it already stopped ([Cancel](#cancel)).
+
+### Files, workspace files and Artifacts
+
+```python
+import base64
+import time
+
+with open("data.csv", "rb") as data_file:
+    source = client.files.create(file=data_file, purpose="user_data")
+
+env_id = session.environment.id
+
+# A hosted Environment rejects workspace file operations while it is `pending`.
+while True:
+    status = client.beta.agents.environments.retrieve(env_id).status
+    if status == "connected":
+        break
+    if status in {"failed", "expired", "disconnected"}:
+        raise SystemExit(f"environment is {status}")
+    time.sleep(3)
+
+client.beta.agents.environments.files.create(
+    env_id, type="file_id", file_id=source.id, path="/workspace/data.csv",
+)
+client.beta.agents.environments.files.create(
+    env_id,
+    type="inline",
+    data=base64.b64encode(b"hello\n").decode(),
+    path="/workspace/hello.txt",
+)
+
+page = client.beta.agents.environments.files.list(env_id, path="/workspace", limit=100)
+while True:
+    for workspace_file in page.data:
+        print(workspace_file.path, workspace_file.size_bytes)
+    if page.next is None:
+        break
+    page = client.beta.agents.environments.files.list(
+        env_id, path="/workspace", limit=100, page=page.next,
+    )
+
+# After a Turn completes, download what it wrote under outputs/.
+for artifact in client.beta.agents.sessions.artifacts.list(session.id):
+    content = client.beta.agents.sessions.artifacts.content(artifact.id, session_id=session.id)
+    content.write_to_file(artifact.path.rsplit("/", 1)[-1])
+```
+
+A Source File holds the bytes once; a workspace file either copies a Source File by ID (`file_id`) or carries base64 `inline` data. The workspace list pages with an opaque `page` token, not the `after` cursor the other lists use. Artifacts are captured from the workspace's `outputs/` directory when a Turn completes ([Environment files and Artifacts](../../contracts/agents-api/environment-files.md)).
+
+### Skills and an Environment Template
+
+```python
+with open("my-skill/SKILL.md", "rb") as skill_file:
+    skill = client.skills.create(files=[("my-skill/SKILL.md", skill_file)])
+
+with open("my-skill/SKILL.md", "rb") as skill_file:
+    client.skills.versions.create(
+        skill.id, files=[("my-skill/SKILL.md", skill_file)], default=True,
+    )
+
+template = client.beta.agents.environments.templates.create(
+    name="python-data",
+    packages={"python": ["pandas"]},
+    setup_commands=[{"command": "mkdir -p /workspace/outputs"}],
+    skills=[{"type": "skill_reference", "skill_id": skill.id}],
+)
+
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted", "environment_template_id": template.id},
+    agent_id=agent.id,
+)
+```
+
+Skills upload through the top-level `client.skills` resource (no Beta header) and each upload is a version; pass files as `(name, file)` tuples. SDK 3.13.0 drops a single ZIP file from the upload, so use HTTP for a ZIP archive ([Skills](#skills)). A Session references the template through `environment_template_id` and freezes it when it starts ([Environment Templates](#environment-templates)).
+
+### Vaults, MCP servers and Credentials
+
+```python
+vault = client.beta.agents.vaults.create(name="internal")
+client.beta.agents.vaults.credentials.create(
+    vault.id,
+    name="Internal MCP",
+    auth={
+        "type": "static_bearer",
+        "mcp_server_url": "https://mcp.example.com/endpoint",
+        "token": token_from_private_configuration,
+    },
+)
+
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    vault_ids=[vault.id],
+    input="List the open incidents.",
+    agent={
+        "model": "your-model-id",
+        "tools": [{
+            "type": "mcp",
+            "server_label": "internal",
+            "transport": {"type": "http", "server_url": "https://mcp.example.com/endpoint"},
+            "connection_origin": "environment",
+        }],
+    },
+)
+```
+
+The MCP tool may name the Credential in `credential_id`; without it, the attached Credential whose `mcp_server_url` equals the tool's `server_url` is selected ([Vaults and Credentials](../../contracts/agents-api/vaults.md#credential-selection-in-a-session)). The `environment` origin runs on `openai_hosted`; `service` requires a `none` placement, and each harness supports a different set ([MCP connection origin](../../contracts/agents-api/environments.md#public-mcp-connection-origin)).
+
+### Self-hosted Sessions
+
+A `self_hosted` Session and its installation command are in [Self-hosted execution](../getting-started/self-hosted.md#connect-a-machine). The Session brings its own model provider through `x_agents_core.model_provider` in `extra_body`; the protocol must match the harness ([Model execution](../../contracts/agents-api/model-execution.md)).
+
+### Pagination, idempotency and typed errors
+
+```python
+import uuid
+
+from openai import ConflictError, NotFoundError
+
+for session in client.beta.agents.sessions.list(limit=100):
+    print(session.id, session.status)
+
+creation_key = str(uuid.uuid4())  # store it before the first attempt
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    agent_id=agent.id,
+    extra_headers={"Idempotency-Key": creation_key},
+)
+
+client.beta.agents.sessions.events.create(
+    session.id,
+    events=[{
+        "type": "agent.session.input.message",
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "Continue."}]}],
+    }],
+    idempotency_key=str(uuid.uuid4()),
+)
+
+try:
+    client.beta.agents.sessions.delete(session.id)
+except ConflictError as error:
+    print(error.code, error.param, error.request_id)
+except NotFoundError:
+    print("already gone")
+```
+
+List methods auto-paginate when iterated. `sessions.create` takes no named `idempotency_key`; pass `extra_headers={"Idempotency-Key": ...}` and reuse the same key on retry ([Idempotency](#idempotency)). API failures arrive as typed exceptions carrying `.code`, `.param`, `.type` and `.request_id` ([Errors](#errors)).
+
 ## Diagnose a failure
 
 1. Read the Session's `status` and `error`, and the latest Turn's `error`. A failed Turn reports only a generic `internal_error`.

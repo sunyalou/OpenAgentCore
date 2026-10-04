@@ -1,7 +1,7 @@
 ---
 title: "Agents API 指南"
 source: docs/api/public-agent-api.md
-source_hash: 4f830cdc1d1a73646d466b7de49496b72701b2f23f4842a384116cb75a91e5e5
+source_hash: 66b2daebd5e8b55fe04c319e1fbd833398099e5c14b1bca8fe5121dd64ddcf3c
 ---
 
 Core 在 `/v1` 提供 [OpenAI Agents API](https://platform.openai.com/docs/api-reference)。可以使用官方 OpenAI SDK 或普通 HTTP。本指南针对每项常见操作同时展示这两种方式，并说明 Core 与 OpenAI 存在差异的地方。
@@ -532,6 +532,228 @@ session = client.beta.agents.sessions.create(environment={"type": "none"}, input
 ```
 
 HTTP 路径为 `/vaults`，需要 Beta 请求头。Session 从其 `vault_ids` 中选择凭据，也可以通过 `credential_id` 指定具体凭据；无论采用哪种方式，MCP 服务器的 URL 都必须与所选凭据的 `mcp_server_url` 完全匹配。[Vaults contract](../../../contracts/agents-api/zh/vaults.md) 负责选择、错误、OAuth 刷新和删除。MCP 工具的 `connection_origin` 决定由 Core 端还是工作区连接服务器，而且每个 harness 支持的取值集合不同；请参阅 [MCP connection origin](../../../contracts/agents-api/zh/environments.md#public-mcp-connection-origin)。
+
+## 完整示例 {#worked-examples}
+
+以下示例将前文介绍的各种资源组合成完整流程。它们使用固定版本的 SDK 和 Core `/v1` 端点；请将 `your-model-id` 替换为你的安装所提供的模型 ID。可运行版本位于 [`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md)。
+
+### 异步客户端与异步工具处理器 {#async-client-and-async-tool-handlers}
+
+```python
+import asyncio
+
+from openai import AsyncOpenAI
+
+client = AsyncOpenAI()  # reads OPENAI_API_KEY and OPENAI_BASE_URL
+
+async def get_weather(args: dict) -> str:
+    return f"Sunny in {args['city']}"
+
+async def main() -> None:
+    agent = await client.beta.agents.create(
+        model="your-model-id",
+        name="Weather assistant",
+        tools=[{
+            "type": "function",
+            "name": "get_weather",
+            "description": "Current weather for a city",
+            "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+        }],
+    )
+    session = await client.beta.agents.sessions.create(
+        environment={"type": "openai_hosted"},
+        agent_id=agent.id,
+    )
+    async with client.beta.agents.sessions.stream(
+        session.id,
+        input="What's the weather in Paris?",
+        tool_handlers={"get_weather": get_weather},
+    ) as stream:
+        async for event in stream:
+            if event.type == "agent.session.turn.output_text.delta":
+                print(event.delta, end="", flush=True)
+
+asyncio.run(main())
+```
+
+每个资源都有参数相同的 `Async*` 对应实现，异步 `sessions.stream` helper 同时接受普通 handler 结果和可等待的 handler 结果。
+
+### 流式创建 Session {#stream-the-session-creation}
+
+```python
+with client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    agent_id=agent.id,
+    input="Review the repository and summarize the risks.",
+    stream=True,
+) as stream:
+    for event in stream:
+        if event.type == "agent.session.created":
+            print("session", event.session.id)
+        elif event.type == "agent.session.environment.ready":
+            print("environment ready")
+        elif event.type == "agent.session.idle":
+            break
+```
+
+`stream=True` 只改变响应类型：同一个 POST 返回 `Stream[AgentSessionEvent]` 而不是 `AgentSession`。该流以 `agent.session.created` 开始，并在第一个 `idle` 或 `failed` 处结束；之后读取 Session 以了解结果（[流式事件](#stream-events)）。
+
+取消仍在运行的 Turn：
+
+```python
+client.beta.agents.sessions.events.create(
+    session.id,
+    events=[{"type": "agent.session.input.cancel"}],
+)
+```
+
+Turn 稍后才会到达 `cancelled` 状态；此请求返回并不意味着它已经停止（[取消](#cancel)）。
+
+### 文件、工作区文件和 Artifacts {#files-workspace-files-and-artifacts}
+
+```python
+import base64
+import time
+
+with open("data.csv", "rb") as data_file:
+    source = client.files.create(file=data_file, purpose="user_data")
+
+env_id = session.environment.id
+
+# A hosted Environment rejects workspace file operations while it is `pending`.
+while True:
+    status = client.beta.agents.environments.retrieve(env_id).status
+    if status == "connected":
+        break
+    if status in {"failed", "expired", "disconnected"}:
+        raise SystemExit(f"environment is {status}")
+    time.sleep(3)
+
+client.beta.agents.environments.files.create(
+    env_id, type="file_id", file_id=source.id, path="/workspace/data.csv",
+)
+client.beta.agents.environments.files.create(
+    env_id,
+    type="inline",
+    data=base64.b64encode(b"hello\n").decode(),
+    path="/workspace/hello.txt",
+)
+
+page = client.beta.agents.environments.files.list(env_id, path="/workspace", limit=100)
+while True:
+    for workspace_file in page.data:
+        print(workspace_file.path, workspace_file.size_bytes)
+    if page.next is None:
+        break
+    page = client.beta.agents.environments.files.list(
+        env_id, path="/workspace", limit=100, page=page.next,
+    )
+
+# After a Turn completes, download what it wrote under outputs/.
+for artifact in client.beta.agents.sessions.artifacts.list(session.id):
+    content = client.beta.agents.sessions.artifacts.content(artifact.id, session_id=session.id)
+    content.write_to_file(artifact.path.rsplit("/", 1)[-1])
+```
+
+Source File 只保存一次字节；工作区文件可以按 ID（`file_id`）复制 Source File，也可以携带 base64 `inline` 数据。工作区列表使用不透明的 `page` token 分页，而不是其他列表使用的 `after` 游标。Turn 完成时，Core 会从工作区的 `outputs/` 目录捕获 Artifacts（[Environment files and Artifacts](../../../contracts/agents-api/zh/environment-files.md)）。
+
+### Skills 与环境模板 {#skills-and-an-environment-template}
+
+```python
+with open("my-skill/SKILL.md", "rb") as skill_file:
+    skill = client.skills.create(files=[("my-skill/SKILL.md", skill_file)])
+
+with open("my-skill/SKILL.md", "rb") as skill_file:
+    client.skills.versions.create(
+        skill.id, files=[("my-skill/SKILL.md", skill_file)], default=True,
+    )
+
+template = client.beta.agents.environments.templates.create(
+    name="python-data",
+    packages={"python": ["pandas"]},
+    setup_commands=[{"command": "mkdir -p /workspace/outputs"}],
+    skills=[{"type": "skill_reference", "skill_id": skill.id}],
+)
+
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted", "environment_template_id": template.id},
+    agent_id=agent.id,
+)
+```
+
+Skills 通过顶层 `client.skills` 资源上传（不需要 Beta 请求头），每次上传都是一个版本；请以 `(name, file)` 元组传入文件。SDK 3.13.0 不会上传单个 ZIP 文件，因此 ZIP 归档请使用 HTTP（[Skills](#skills)）。Session 通过 `environment_template_id` 引用模板，并在启动时将其冻结（[环境模板](#environment-templates)）。
+
+### Vaults、MCP 服务器与凭据 {#vaults-mcp-servers-and-credentials}
+
+```python
+vault = client.beta.agents.vaults.create(name="internal")
+client.beta.agents.vaults.credentials.create(
+    vault.id,
+    name="Internal MCP",
+    auth={
+        "type": "static_bearer",
+        "mcp_server_url": "https://mcp.example.com/endpoint",
+        "token": token_from_private_configuration,
+    },
+)
+
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    vault_ids=[vault.id],
+    input="List the open incidents.",
+    agent={
+        "model": "your-model-id",
+        "tools": [{
+            "type": "mcp",
+            "server_label": "internal",
+            "transport": {"type": "http", "server_url": "https://mcp.example.com/endpoint"},
+            "connection_origin": "environment",
+        }],
+    },
+)
+```
+
+MCP 工具可以用 `credential_id` 指定 Credential；未指定时，会选择 `mcp_server_url` 与工具的 `server_url` 相等的已附加 Credential（[Vaults 与凭据](../../../contracts/agents-api/zh/vaults.md#credential-selection-in-a-session)）。`environment` origin 运行在 `openai_hosted` 上；`service` 需要 `none` 部署位置，而且每个 harness 支持的取值集合不同（[MCP connection origin](../../../contracts/agents-api/zh/environments.md#public-mcp-connection-origin)）。
+
+### 自托管 Session {#self-hosted-sessions}
+
+`self_hosted` Session 及其安装命令见[自托管执行](../getting-started/self-hosted.md#connect-a-machine)。Session 通过 `extra_body` 中的 `x_agents_core.model_provider` 自带模型提供商；协议必须与 harness 匹配（[Model execution](../../../contracts/agents-api/zh/model-execution.md)）。
+
+### 分页、幂等性与类型化错误 {#pagination-idempotency-and-typed-errors}
+
+```python
+import uuid
+
+from openai import ConflictError, NotFoundError
+
+for session in client.beta.agents.sessions.list(limit=100):
+    print(session.id, session.status)
+
+creation_key = str(uuid.uuid4())  # store it before the first attempt
+session = client.beta.agents.sessions.create(
+    environment={"type": "openai_hosted"},
+    agent_id=agent.id,
+    extra_headers={"Idempotency-Key": creation_key},
+)
+
+client.beta.agents.sessions.events.create(
+    session.id,
+    events=[{
+        "type": "agent.session.input.message",
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "Continue."}]}],
+    }],
+    idempotency_key=str(uuid.uuid4()),
+)
+
+try:
+    client.beta.agents.sessions.delete(session.id)
+except ConflictError as error:
+    print(error.code, error.param, error.request_id)
+except NotFoundError:
+    print("already gone")
+```
+
+列表方法在迭代时会自动分页。`sessions.create` 没有名为 `idempotency_key` 的参数；请通过 `extra_headers={"Idempotency-Key": ...}` 传入，并在重试时复用同一个键（[幂等性](#idempotency)）。API 失败会以类型化异常的形式返回，携带 `.code`、`.param`、`.type` 和 `.request_id`（[错误](#errors)）。
 
 ## 诊断故障 {#diagnose-a-failure}
 
