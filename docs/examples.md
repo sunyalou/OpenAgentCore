@@ -7,7 +7,7 @@ Applications and scripts built on the [Agents API](./api/public-agent-api.md). E
 | Example | What it shows |
 | --- | --- |
 | [Parsar Agent workbench](#parsar-agent-workbench) | A product UI: models, Skills, MCP, reusable Agents, and Sessions on any runtime |
-| [Hosted Agents Python scripts](#hosted-agents-python-scripts) | Eight small scripts for the hosted Agents API, from quickstart to Vaults and MCP |
+| [Hosted Agents Python scripts](#hosted-agents-python-scripts) | Ten small scripts for the hosted Agents API, from quickstart to Vaults and MCP |
 
 ## Parsar Agent workbench
 
@@ -35,7 +35,7 @@ Each feature maps to one part of the API. Read the code next to the guide sectio
 
 ## Hosted Agents Python scripts
 
-Small standalone scripts for the hosted Agents API, one per flow: quickstart, async, streaming and cancellation, files and Artifacts, Skills and templates, Vaults and MCP, self-hosted Sessions, and pagination, idempotency and typed errors.
+Small standalone scripts for the hosted Agents API, one per flow: quickstart, async, streaming and cancellation, files and Artifacts, Skills and templates, Vaults and MCP, self-hosted Sessions, harness and model selection, Session-level inline agent overrides, and pagination, idempotency and typed errors.
 
 Source: [`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md).
 

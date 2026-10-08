@@ -27,6 +27,8 @@ export OAC_MODEL='<model-id>'
 | [`skills_and_template.py`](skills_and_template.py) | Skill upload and version, Environment Template, Session from the template | |
 | [`vault_mcp.py`](vault_mcp.py) | Vault, `static_bearer` Credential and an HTTP MCP tool | `OAC_MCP_URL`, `OAC_MCP_TOKEN`; optional `OAC_MCP_PROMPT` |
 | [`self_hosted.py`](self_hosted.py) | A `self_hosted` Session and its installation command | `OAC_WORKSPACE`, `OAC_MODEL_BASE_URL`, `OAC_MODEL_API_KEY`; optional `OAC_HARNESS`, `OAC_MODEL_PROTOCOL` |
+| [`harness_and_model.py`](harness_and_model.py) | A saved Agent with an explicit harness and model, then one Turn | optional `OAC_HARNESS` (default `codex`) |
+| [`inline_agent_override.py`](inline_agent_override.py) | A Session-level inline agent overriding a saved Agent | optional `OAC_HARNESS` (default `codex`) |
 | [`patterns.py`](patterns.py) | Pagination, repeated creation with one `Idempotency-Key`, typed errors | |
 
 ## Notes

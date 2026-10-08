@@ -1,7 +1,7 @@
 ---
 title: "示例"
 source: docs/examples.md
-source_hash: 7d8b37a046418258f16bea3ccaf0ef285db0e7e1608adf08c72c342de9ec0f14
+source_hash: 76dfeaceb4e564d20992e44be37d86e9400995ee3337a0b06f4eb43831180330
 ---
 
 基于 [Agents API](api/public-agent-api.md)构建的应用和脚本。每个示例都使用 Project API 密钥连接真实的 Core 安装。
@@ -9,7 +9,7 @@ source_hash: 7d8b37a046418258f16bea3ccaf0ef285db0e7e1608adf08c72c342de9ec0f14
 | 示例 | 展示内容 |
 | --- | --- |
 | [Parsar Agent 工作台](#parsar-agent-workbench) | 产品 UI：模型、Skills、MCP、可复用 Agent，以及在任意 Runtime 上运行的 Session |
-| [Hosted Agents Python 脚本](#hosted-agents-python-scripts) | 八个小型脚本，覆盖托管 Agents API 从快速入门到 Vaults 和 MCP 的用法 |
+| [Hosted Agents Python 脚本](#hosted-agents-python-scripts) | 十个小型脚本，覆盖托管 Agents API 从快速入门到 Vaults 和 MCP 的用法 |
 
 ## Parsar Agent 工作台 {#parsar-agent-workbench}
 
@@ -37,7 +37,7 @@ source_hash: 7d8b37a046418258f16bea3ccaf0ef285db0e7e1608adf08c72c342de9ec0f14
 
 ## Hosted Agents Python 脚本 {#hosted-agents-python-scripts}
 
-面向托管 Agents API 的小型独立脚本，每个脚本对应一个流程：快速入门、异步、流式与取消、文件与 Artifacts、Skills 与模板、Vaults 与 MCP、自托管 Session，以及分页、幂等性和类型化错误。
+面向托管 Agents API 的小型独立脚本，每个脚本对应一个流程：快速入门、异步、流式与取消、文件与 Artifacts、Skills 与模板、Vaults 与 MCP、自托管 Session、harness 与模型选择、Session 级 inline agent 覆盖，以及分页、幂等性和类型化错误。
 
 源码：[`example/hosted-agents-python`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/example/hosted-agents-python/README.md)。
 
