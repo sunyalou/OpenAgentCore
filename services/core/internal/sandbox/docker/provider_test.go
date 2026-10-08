@@ -31,7 +31,7 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	for _, change := range []func(*Config){
 		func(c *Config) { c.Image = "mutable:latest" },
 		func(c *Config) { c.InstallationID = "" },
-		func(c *Config) { c.Network = "host" },
+		func(c *Config) { c.Network = "" },
 		func(c *Config) { c.Network = "container:other" },
 		func(c *Config) { c.Seccomp = "" },
 		func(c *Config) { c.Devices = []string{"relative"} },
@@ -74,6 +74,11 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	valid.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}
 	if _, e := New(c, valid); e != nil {
 		t.Fatalf("rejected valid device and mount configuration: %v", e)
+	}
+	hostNetwork := base
+	hostNetwork.Network = "host"
+	if _, e := New(c, hostNetwork); e != nil {
+		t.Fatalf("rejected host network: %v", e)
 	}
 }
 

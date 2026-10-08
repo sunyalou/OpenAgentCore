@@ -221,7 +221,7 @@ Native acceptance proves what fixtures cannot: creation, lease behavior, owned p
 The Docker Sandbox Provider ([`sandbox/docker`](https://github.com/MiniMax-AI/OpenAgentCore/tree/main/services/core/internal/sandbox/docker)) runs every Runtime image, whichever Harness it serves, with the same container settings ([`container_options.go`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/internal/sandbox/docker/container_options.go)):
 
 - user 1000:1000, read-only root filesystem, all capabilities dropped, `no-new-privileges`, the [seccomp profile](#seccomp-profile) and AppArmor `unconfined`;
-- the node’s configured network and extra hosts ([node configuration](./configuration.md#docker-node-configuration));
+- the node’s configured network and extra hosts ([node configuration](./configuration.md#docker-node-configuration)); a `host` network shares the host’s network stack and reaches everything the host can, so configure it only on trusted hosts;
 - CPU and memory from the deployment specification, a 128-process limit and a 128 MiB `/tmp` tmpfs;
 - two named volumes labelled with the installation, tenant, Environment and allocation: `<name>-home` at `/home` and `<name>-environment` at `/environment`, whose `workspace` subdirectory is also mounted at `/workspace`. The Docker Engine must support volume subpath mounts;
 - with the configured `nested_sandbox` option, Docker's `/proc` masks are lifted (`/sys/firmware` and `/sys/devices/virtual/powercap` stay masked) and the container runs an init process;

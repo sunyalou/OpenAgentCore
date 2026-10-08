@@ -23,7 +23,8 @@ const labelPrefix = "io.oac."
 // Config is trusted operator configuration, never public Session input. The
 // immutable image contains the qualified native profile and all Runtime binaries.
 // Seccomp is JSON content, not a path on the Docker host. Network must provide
-// trusted daemon/model connectivity; native tool network policy is in the image.
+// trusted daemon/model connectivity; it is the node's Docker network or `host`,
+// which shares the host's network stack. Native tool network policy is in the image.
 // Devices and Mounts are host passthroughs the operator opts into per node; they
 // widen what a sandbox can reach and must only be configured on trusted hosts.
 type Config struct {
@@ -45,7 +46,7 @@ type Provider struct {
 var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
-	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || config.Network == "host" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) {
+	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) {
 		return nil, sandbox.ErrInvalid
 	}
 	if config.Resources != nil {

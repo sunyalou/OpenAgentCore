@@ -116,6 +116,13 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	}
 }
 
+func TestRuntimeContainerOptionsHostNetwork(t *testing.T) {
+	options := runtimeContainerOptions(Config{Network: "host"}, "fixture", nil, nil)
+	if options.HostConfig.NetworkMode != "host" {
+		t.Fatal("network mode is not passed through")
+	}
+}
+
 func TestRuntimeContainerOptionsCarryDevicesAndMounts(t *testing.T) {
 	options := runtimeContainerOptions(Config{Devices: []string{"/dev/xpu0", "/dev/xpuctrl"}, Mounts: []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}}, "fixture", nil, nil)
 	if len(options.HostConfig.Devices) != 2 || options.HostConfig.Devices[0].PathOnHost != "/dev/xpu0" || options.HostConfig.Devices[0].PathInContainer != "/dev/xpu0" || options.HostConfig.Devices[0].CgroupPermissions != "rwm" || options.HostConfig.Devices[1].PathOnHost != "/dev/xpuctrl" {

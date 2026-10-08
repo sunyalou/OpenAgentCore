@@ -1,7 +1,7 @@
 ---
 title: "添加 Sandbox Provider"
 source: docs/sandbox-provider.md
-source_hash: 5a5166e4825508a3b055e22e0e16c0f494a87ecef60d1a31724518aaa7bad7d7
+source_hash: 87318029d3b5b01e7db75d19be1603645c0a8bf3f71ac7feeccd5f6b94c14055
 ---
 
 **Sandbox Provider** 为 Core 管理的 Environment 提供 Runtime daemon 运行所需的外层计算资源，以及启动 daemon 的有界引导流程。本指南说明如何添加 Provider，并作为 Core 驱动 Provider 的参考。接口为 [`SandboxProvider`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/internal/sandbox/sandbox_provider.go)。
@@ -223,7 +223,7 @@ node 测试单独覆盖 disconnect、reconnect fencing，以及 Create response 
 Docker Sandbox Provider（[`sandbox/docker`](https://github.com/MiniMax-AI/OpenAgentCore/tree/main/services/core/internal/sandbox/docker)）对所有 Runtime image 使用相同 container setting，无论服务哪个 Harness（[`container_options.go`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/internal/sandbox/docker/container_options.go)）：
 
 - user 1000:1000、只读 root filesystem、移除全部 capability、`no-new-privileges`、[seccomp profile](#seccomp-profile) 和 AppArmor `unconfined`；
-- node 配置的 network 和 extra host（[node 配置](configuration.md#docker-node-configuration)）；
+- node 配置的 network 和 extra host（[node 配置](configuration.md#docker-node-configuration)）；`host` 网络共享主机的网络栈，可达主机能到达的一切，只应在受信任的主机上配置；
 - deployment specification 中的 CPU 和 memory，128-process limit 和 128 MiB `/tmp` tmpfs；
 - 两个 named volume，label 包含 installation、tenant、Environment 和 allocation：`<name>-home` 挂载到 `/home`，`<name>-environment` 挂载到 `/environment`，后者的 `workspace` 子目录也挂载到 `/workspace`。Docker Engine 必须支持 volume subpath mount；
 - 配置 `nested_sandbox` option 时，解除 Docker `/proc` mask（`/sys/firmware` 和 `/sys/devices/virtual/powercap` 保持 mask），container 运行 init process；
