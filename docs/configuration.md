@@ -113,12 +113,20 @@ The node installer writes Docker’s provider configuration into the node’s co
 | Field | Installer value | Meaning |
 | --- | --- | --- |
 | `host` | `unix:///var/run/docker.sock` | Explicit Docker Engine socket |
-| `network` | `oac-node-<installation-id>` | Runtime container network |
+| `network` | `oac-node-<installation-id>` | Runtime container network; `host` shares the host's network stack |
 | `seccomp_file` | `<node-root>/runtime/seccomp.json` | Matched distribution’s seccomp profile |
 | `nested_sandbox` | `true` | Enables the Docker adapter’s init process and proc-mask configuration |
 | `extra_hosts` | Optional | Additional container host mappings |
+| `devices` | Optional | Canonical host device paths under `/dev/` passed into every Runtime container |
+| `mounts` | Optional | Read-only host paths exposed inside every Runtime container (`source`, `target`) |
+| `ulimits` | Optional | Container resource limits (`name`, `soft`, `hard`; `-1` is unlimited) applied to every Runtime container |
+| `shm_size_mib` | Optional | `/dev/shm` size in MiB for every Runtime container; the Docker default applies when omitted |
+| `pids_limit` | Optional | Task limit for every Runtime container; defaults to `128` |
+| `capabilities` | Optional | Linux capabilities added to every Runtime container on top of the default drop-all set |
 
-The [Docker adapter](./sandbox-provider.md#docker-adapter) owns container isolation, volume layout and lifecycle behavior.
+`devices`, `mounts`, `ulimits`, `capabilities`, `shm_size_mib`, `pids_limit` and a `host` network are operator-managed; the installer does not write them. Keep them on a [manually registered node](./getting-started/nodes.md#register-a-node-manually), whose configuration is not regenerated.
+
+The [Docker adapter](./sandbox-provider.md#docker-adapter) owns container isolation, volume layout, device passthrough, host mounts and lifecycle behavior.
 
 ## Installation directory
 

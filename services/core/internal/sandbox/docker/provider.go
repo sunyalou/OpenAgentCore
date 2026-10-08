@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/MiniMax-AI/OpenAgentCore/internal/agentnetwork"
@@ -22,12 +23,32 @@ const labelPrefix = "io.oac."
 // Config is trusted operator configuration, never public Session input. The
 // immutable image contains the qualified native profile and all Runtime binaries.
 // Seccomp is JSON content, not a path on the Docker host. Network must provide
-// trusted daemon/model connectivity; native tool network policy is in the image.
+// trusted daemon/model connectivity; it is the node's Docker network or `host`,
+// which shares the host's network stack. Native tool network policy is in the image.
+// Devices and Mounts are host passthroughs the operator opts into per node; they
+// widen what a sandbox can reach and must only be configured on trusted hosts.
+// Capabilities are added to the default drop-all set. ShmSizeMiB and PidsLimit
+// are operator resource overrides for every container.
 type Config struct {
 	InstallationID, Image, Network, Seccomp string
 	ExtraHosts                              []string
 	NestedSandbox                           bool
+	Devices                                 []string
+	Mounts                                  []Mount
+	Ulimits                                 []Ulimit
+	Capabilities                            []string
+	ShmSizeMiB                              *int64
+	PidsLimit                               *int64
 	Resources                               *sandbox.Resources
+}
+
+// Mount is one read-only host path exposed inside every Runtime container.
+type Mount struct{ Source, Target string }
+
+// Ulimit is one resource limit applied to every Runtime container.
+type Ulimit struct {
+	Name       string
+	Soft, Hard int64
 }
 type Provider struct {
 	client *client.Client
@@ -37,7 +58,7 @@ type Provider struct {
 var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
-	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || config.Network == "host" || strings.HasPrefix(config.Network, "container:") {
+	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) || !validUlimits(config.Ulimits) || !validCapabilities(config.Capabilities) || !validShmSize(config.ShmSizeMiB) || !validPidsLimit(config.PidsLimit) {
 		return nil, sandbox.ErrInvalid
 	}
 	if config.Resources != nil {
@@ -53,6 +74,128 @@ func validID(v string) bool {
 	u, e := uuid.Parse(v)
 	return e == nil && u != uuid.Nil && u.String() == v
 }
+
+const (
+	maxDevices      = 64
+	maxMounts       = 16
+	maxUlimits      = 16
+	maxCapabilities = 16
+	maxShmSizeMiB   = 1048576
+	maxPidsLimit    = 1048576
+)
+
+// validDevices accepts deduplicated canonical device paths under /dev.
+func validDevices(devices []string) bool {
+	if len(devices) > maxDevices {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, device := range devices {
+		if !strings.HasPrefix(device, "/dev/") || path.Clean(device) != device || seen[device] {
+			return false
+		}
+		seen[device] = true
+	}
+	return true
+}
+
+// validMounts accepts canonical absolute source and target paths whose target
+// never shadows a Runtime-owned path. Host mounts are always read-only.
+func validMounts(mounts []Mount) bool {
+	if len(mounts) > maxMounts {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, m := range mounts {
+		if !validAbsolutePath(m.Source) || !validMountTarget(m.Target) || seen[m.Target] {
+			return false
+		}
+		seen[m.Target] = true
+	}
+	return true
+}
+
+func validAbsolutePath(v string) bool { return path.IsAbs(v) && path.Clean(v) == v && v != "/" }
+
+func validMountTarget(v string) bool {
+	if !validAbsolutePath(v) {
+		return false
+	}
+	for _, reserved := range []string{"/proc", "/sys", "/dev", "/home", "/environment", "/workspace", "/tmp"} {
+		if v == reserved || strings.HasPrefix(v, reserved+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+// validUlimits accepts uniquely named resource limits; -1 means unlimited.
+func validUlimits(ulimits []Ulimit) bool {
+	if len(ulimits) > maxUlimits {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, u := range ulimits {
+		if !validUlimitName(u.Name) || seen[u.Name] || u.Soft < -1 || u.Hard < -1 || (u.Hard != -1 && (u.Soft == -1 || u.Soft > u.Hard)) {
+			return false
+		}
+		seen[u.Name] = true
+	}
+	return true
+}
+
+func validUlimitName(name string) bool {
+	if name == "" || len(name) > 32 || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// validShmSize accepts an optional /dev/shm size in MiB.
+func validShmSize(mib *int64) bool { return mib == nil || (*mib >= 1 && *mib <= maxShmSizeMiB) }
+
+// validPidsLimit accepts an optional task limit.
+func validPidsLimit(limit *int64) bool {
+	return limit == nil || (*limit >= 1 && *limit <= maxPidsLimit)
+}
+
+// validCapabilities accepts deduplicated Linux capability names added on top
+// of the default drop-all set; ALL is never granted.
+func validCapabilities(capabilities []string) bool {
+	if len(capabilities) > maxCapabilities {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, capability := range capabilities {
+		if !validCapabilityName(capability) || seen[capability] {
+			return false
+		}
+		seen[capability] = true
+	}
+	return true
+}
+
+func validCapabilityName(name string) bool {
+	if name == "" || name == "ALL" || len(name) > 32 || name[0] < 'A' || name[0] > 'Z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func validReference(r sandbox.Reference) bool {
 	return validID(r.TenantID) && validID(r.EnvironmentID) && validID(r.AllocationID)
 }

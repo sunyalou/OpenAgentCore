@@ -31,6 +31,7 @@ make build-core-distribution
 | `CORE_DISTRIBUTION_BUILD_DIR` | Output directory under `~/.oac`. Default: `~/.oac/build/core-distribution` |
 | `CORE_DISTRIBUTION_BUILD_NETWORK` | Docker build network: `default`, `host` or `none` |
 | `CORE_DISTRIBUTION_MICROSANDBOX_ARCHIVE` | Cached microsandbox release archive. Default: `~/.oac/cache/microsandbox-v0.7.2-linux-x86_64.tar.gz`, downloaded when missing |
+| `CORE_DISTRIBUTION_MPICH_ARCHIVE` | Cached MPICH archive for XCCL workloads. Default: `~/.oac/cache/p800_mpich_5.0.0_ch3_nemesis_x86_64.tar.gz`, downloaded when missing |
 | `CORE_DISTRIBUTION_DATABASE_IMAGE` | PostgreSQL 16 image; the default is pinned by its linux/amd64 manifest digest |
 
 The build reuses the Core, Web, Runtime, SDK and helper builders. The manifest records the commit and source tree, image config and OCI manifest digests, the Runtime OCI manifest digest, the microsandbox runtime and firmware hashes, and the size and SHA-256 of every Runtime and node artifact; native installers carry only their SHA-256 in the [catalog](#native-installers). Output is the control archive and its `.sha256`, the optional offline archive, and the versioned Runtime, node and native installer assets. Nothing is published. Rebuilding into a directory that already holds this commit's distribution is refused.
@@ -86,7 +87,7 @@ docker build --platform linux/amd64 -t oac-runtime:mcode "${OAC_DEV_HOME:-$HOME/
 
 `scripts/prepare-release-runtimes.sh` runs the companion build from the pins.
 
-The distribution combines the three Harness images into one Runtime image (`deploy/distribution/Runtime.Dockerfile`): the MiniMax Code image, which carries the daemon, with the Codex executable and resources and the Claude SDK bundle copied in. It verifies that each image carries the daemon built from the same commit.
+The distribution combines the three Harness images into one Runtime image (`deploy/distribution/Runtime.Dockerfile`): the MiniMax Code image, which carries the daemon, with the Codex executable and resources and the Claude SDK bundle copied in. It adds the RDMA user space, the pinned MPICH launcher and a C/C++ build toolchain for XCCL workloads, including the `CMAKE_PATH`, `GTEST_PATH`, `GFLAGS_PATH` and `USE_SYSTEM_RDMA` presets that keep its build from cloning dependencies over the internal git, and verifies that each image carries the daemon built from the same commit.
 
 **E2B helper.**
 
