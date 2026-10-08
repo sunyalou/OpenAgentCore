@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -27,12 +28,117 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	}
 	defer c.Close()
 	base := Config{InstallationID: uuid.NewString(), Image: "test@sha256:" + strings.Repeat("a", 64), Network: "bridge", Seccomp: `{}`}
-	for _, change := range []func(*Config){func(c *Config) { c.Image = "mutable:latest" }, func(c *Config) { c.InstallationID = "" }, func(c *Config) { c.Network = "host" }, func(c *Config) { c.Network = "container:other" }, func(c *Config) { c.Seccomp = "" }} {
+	zero, negative, over := int64(0), int64(-1), int64(1048577)
+	for _, change := range []func(*Config){
+		func(c *Config) { c.Image = "mutable:latest" },
+		func(c *Config) { c.InstallationID = "" },
+		func(c *Config) { c.Network = "" },
+		func(c *Config) { c.Network = "container:other" },
+		func(c *Config) { c.Seccomp = "" },
+		func(c *Config) { c.Devices = []string{"relative"} },
+		func(c *Config) { c.Devices = []string{"/dev/../etc/passwd"} },
+		func(c *Config) { c.Devices = []string{"/etc/passwd"} },
+		func(c *Config) { c.Devices = []string{"/dev/xpu0", "/dev/xpu0"} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "relative", Target: "/opt/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/../etc", Target: "/opt/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/workspace/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/dev/xre"}} },
+		func(c *Config) {
+			c.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}, {Source: "/opt/other", Target: "/opt/xre"}}
+		},
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/proc"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/sys/fs"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/home/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/environment/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/tmp/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/", Target: "/opt/xre"}} },
+		func(c *Config) {
+			for i := 0; i < 65; i++ {
+				c.Devices = append(c.Devices, fmt.Sprintf("/dev/xpu%d", i))
+			}
+		},
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Mounts = append(c.Mounts, Mount{Source: "/opt/xre", Target: fmt.Sprintf("/opt/xre%d", i)})
+			}
+		},
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "MEMLOCK", Soft: -1, Hard: -1}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "", Soft: 1, Hard: 1}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: 2048, Hard: 1024}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: 1024}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: -2, Hard: -2}} },
+		func(c *Config) {
+			c.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}, {Name: "memlock", Soft: -1, Hard: -1}}
+		},
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Ulimits = append(c.Ulimits, Ulimit{Name: fmt.Sprintf("limit%d", i), Soft: 1, Hard: 1})
+			}
+		},
+		func(c *Config) { c.ShmSizeMiB = &zero },
+		func(c *Config) { c.ShmSizeMiB = &negative },
+		func(c *Config) { c.ShmSizeMiB = &over },
+		func(c *Config) { c.PidsLimit = &zero },
+		func(c *Config) { c.PidsLimit = &negative },
+		func(c *Config) { c.PidsLimit = &over },
+		func(c *Config) { c.Capabilities = []string{"ALL"} },
+		func(c *Config) { c.Capabilities = []string{"sys_ptrace"} },
+		func(c *Config) { c.Capabilities = []string{"SYS-PTRACE"} },
+		func(c *Config) { c.Capabilities = []string{""} },
+		func(c *Config) { c.Capabilities = []string{strings.Repeat("A", 33)} },
+		func(c *Config) { c.Capabilities = []string{"SYS_PTRACE", "SYS_PTRACE"} },
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Capabilities = append(c.Capabilities, fmt.Sprintf("CAP%d", i))
+			}
+		},
+	} {
 		v := base
 		change(&v)
 		if _, e := New(c, v); !errors.Is(e, sandbox.ErrInvalid) {
 			t.Fatalf("accepted invalid configuration: %v", e)
 		}
+	}
+	shm, pids := int64(131072), int64(4096)
+	valid := base
+	valid.Devices = []string{"/dev/xpu0", "/dev/xpuctrl"}
+	valid.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}
+	valid.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}
+	valid.ShmSizeMiB = &shm
+	valid.PidsLimit = &pids
+	valid.Capabilities = []string{"SYS_PTRACE", "IPC_LOCK"}
+	if _, e := New(c, valid); e != nil {
+		t.Fatalf("rejected valid device and mount configuration: %v", e)
+	}
+	hostNetwork := base
+	hostNetwork.Network = "host"
+	if _, e := New(c, hostNetwork); e != nil {
+		t.Fatalf("rejected host network: %v", e)
+	}
+	boundary := base
+	boundary.Ulimits = []Ulimit{{Name: "memlock", Soft: 0, Hard: 0}, {Name: "nofile", Soft: 1024, Hard: -1}, {Name: "a_b9", Soft: 1, Hard: 2}}
+	if _, e := New(c, boundary); e != nil {
+		t.Fatalf("rejected valid ulimit boundaries: %v", e)
+	}
+	full := base
+	for i := 0; i < 16; i++ {
+		full.Ulimits = append(full.Ulimits, Ulimit{Name: fmt.Sprintf("limit%d", i), Soft: 1, Hard: 1})
+	}
+	if _, e := New(c, full); e != nil {
+		t.Fatalf("rejected sixteen ulimits: %v", e)
+	}
+	longCap := base
+	longCap.Capabilities = []string{strings.Repeat("A", 32)}
+	if _, e := New(c, longCap); e != nil {
+		t.Fatalf("rejected a 32-byte capability name: %v", e)
+	}
+	manyCaps := base
+	for i := 0; i < 16; i++ {
+		manyCaps.Capabilities = append(manyCaps.Capabilities, fmt.Sprintf("CAP%d", i))
+	}
+	if _, e := New(c, manyCaps); e != nil {
+		t.Fatalf("rejected sixteen capabilities: %v", e)
 	}
 }
 

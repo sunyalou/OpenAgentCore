@@ -12,6 +12,7 @@ import (
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 )
 
@@ -112,5 +113,65 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	options := runtimeContainerOptions(Config{}, "fixture", nil, nil)
 	if options.HostConfig.NanoCPUs != 2e9 || options.HostConfig.Memory != 2*1024*1024*1024 {
 		t.Fatal("caller-managed defaults changed")
+	}
+}
+
+func TestRuntimeContainerOptionsCarryCapabilities(t *testing.T) {
+	options := runtimeContainerOptions(Config{Capabilities: []string{"SYS_PTRACE", "IPC_LOCK"}}, "fixture", nil, nil)
+	if len(options.HostConfig.CapAdd) != 2 || options.HostConfig.CapAdd[0] != "SYS_PTRACE" || options.HostConfig.CapAdd[1] != "IPC_LOCK" {
+		t.Fatal("capabilities are not added")
+	}
+	if len(options.HostConfig.CapDrop) != 1 || options.HostConfig.CapDrop[0] != "ALL" {
+		t.Fatal("the drop-all default changed")
+	}
+}
+
+func TestRuntimeContainerOptionsCarryShmSizeAndPidsLimit(t *testing.T) {
+	shm, pids := int64(131072), int64(4096)
+	options := runtimeContainerOptions(Config{ShmSizeMiB: &shm, PidsLimit: &pids}, "fixture", nil, nil)
+	if options.HostConfig.ShmSize != 131072*1024*1024 || options.HostConfig.Resources.PidsLimit == nil || *options.HostConfig.Resources.PidsLimit != 4096 {
+		t.Fatal("shm size or pids limit is not applied")
+	}
+	defaults := runtimeContainerOptions(Config{}, "fixture", nil, nil)
+	if defaults.HostConfig.ShmSize != 0 || defaults.HostConfig.Resources.PidsLimit == nil || *defaults.HostConfig.Resources.PidsLimit != 128 {
+		t.Fatal("container resource defaults changed")
+	}
+}
+
+func TestRuntimeContainerOptionsCarryUlimits(t *testing.T) {
+	options := runtimeContainerOptions(Config{Ulimits: []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}}, "fixture", nil, nil)
+	ulimits := options.HostConfig.Resources.Ulimits
+	if len(ulimits) != 1 || ulimits[0] == nil || ulimits[0].Name != "memlock" || ulimits[0].Soft != -1 || ulimits[0].Hard != -1 {
+		t.Fatal("ulimits are not applied")
+	}
+}
+
+func TestRuntimeContainerOptionsHostNetwork(t *testing.T) {
+	options := runtimeContainerOptions(Config{Network: "host"}, "fixture", nil, nil)
+	if options.HostConfig.NetworkMode != "host" {
+		t.Fatal("network mode is not passed through")
+	}
+}
+
+func TestRuntimeContainerOptionsCarryDevicesAndMounts(t *testing.T) {
+	options := runtimeContainerOptions(Config{Devices: []string{"/dev/xpu0", "/dev/xpuctrl"}, Mounts: []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}}, "fixture", nil, nil)
+	if len(options.HostConfig.Devices) != 2 || options.HostConfig.Devices[0].PathOnHost != "/dev/xpu0" || options.HostConfig.Devices[0].PathInContainer != "/dev/xpu0" || options.HostConfig.Devices[0].CgroupPermissions != "rwm" || options.HostConfig.Devices[1].PathOnHost != "/dev/xpuctrl" {
+		t.Fatal("devices are not passed through")
+	}
+	found := false
+	volumes := 0
+	for _, m := range options.HostConfig.Mounts {
+		if m.Type == mount.TypeVolume {
+			volumes++
+		}
+		if m.Type == mount.TypeBind && m.Source == "/opt/xre" && m.Target == "/opt/xre" && m.ReadOnly {
+			found = true
+		}
+	}
+	if volumes != 3 {
+		t.Fatal("volume layout changed")
+	}
+	if !found {
+		t.Fatal("host mount is not exposed read-only")
 	}
 }

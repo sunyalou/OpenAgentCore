@@ -33,6 +33,25 @@ type Docker struct {
 	SeccompFile   string   `json:"seccomp_file"`
 	ExtraHosts    []string `json:"extra_hosts"`
 	NestedSandbox bool     `json:"nested_sandbox"`
+	Devices       []string `json:"devices"`
+	Mounts        []Mount  `json:"mounts"`
+	Ulimits       []Ulimit `json:"ulimits"`
+	Capabilities  []string `json:"capabilities"`
+	ShmSizeMiB    *int64   `json:"shm_size_mib"`
+	PidsLimit     *int64   `json:"pids_limit"`
+}
+
+// Mount is one read-only host path exposed inside every Runtime container.
+type Mount struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+// Ulimit is one resource limit applied to every Runtime container.
+type Ulimit struct {
+	Name string `json:"name"`
+	Soft *int64 `json:"soft"`
+	Hard *int64 `json:"hard"`
 }
 
 // Load rejects unknown fields, mixed adapters and explicit null configuration.

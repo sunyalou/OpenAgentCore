@@ -29,12 +29,28 @@ func buildDocker(config Config, _ LocalOptions, result *Built) (func(), error) {
 	if !json.Valid(seccomp) {
 		return closeProvider, errors.New("invalid managed Docker seccomp JSON")
 	}
+	for _, m := range entry.Mounts {
+		if _, err := os.Stat(m.Source); err != nil {
+			return closeProvider, fmt.Errorf("managed Docker mount source %q is unavailable", m.Source)
+		}
+	}
+	mounts := make([]sandboxdocker.Mount, 0, len(entry.Mounts))
+	for _, m := range entry.Mounts {
+		mounts = append(mounts, sandboxdocker.Mount{Source: m.Source, Target: m.Target})
+	}
+	ulimits := make([]sandboxdocker.Ulimit, 0, len(entry.Ulimits))
+	for _, u := range entry.Ulimits {
+		if u.Soft == nil || u.Hard == nil {
+			return closeProvider, errors.New("managed Docker ulimits require soft and hard values")
+		}
+		ulimits = append(ulimits, sandboxdocker.Ulimit{Name: u.Name, Soft: *u.Soft, Hard: *u.Hard})
+	}
 	c, err := client.New(client.WithHost(entry.Host))
 	if err != nil {
 		return closeProvider, errors.New("invalid managed Docker endpoint")
 	}
 	closeProvider = func() { _ = c.Close() }
-	provider, err := sandboxdocker.New(c, sandboxdocker.Config{InstallationID: config.InstallationID, Image: entry.Image, Network: entry.Network, Seccomp: string(seccomp), ExtraHosts: entry.ExtraHosts, NestedSandbox: entry.NestedSandbox, Resources: &config.Specification.Resources})
+	provider, err := sandboxdocker.New(c, sandboxdocker.Config{InstallationID: config.InstallationID, Image: entry.Image, Network: entry.Network, Seccomp: string(seccomp), ExtraHosts: entry.ExtraHosts, NestedSandbox: entry.NestedSandbox, Devices: entry.Devices, Mounts: mounts, Ulimits: ulimits, Capabilities: entry.Capabilities, ShmSizeMiB: entry.ShmSizeMiB, PidsLimit: entry.PidsLimit, Resources: &config.Specification.Resources})
 	if err != nil {
 		closeProvider()
 		return func() {}, errors.New("invalid managed Docker provider configuration")
