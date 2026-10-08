@@ -29,6 +29,10 @@ func runtimeContainerOptions(config Config, name string, labels map[string]strin
 	for _, device := range config.Devices {
 		devices = append(devices, container.DeviceMapping{PathOnHost: device, PathInContainer: device, CgroupPermissions: "rwm"})
 	}
+	ulimits := make([]*container.Ulimit, 0, len(config.Ulimits))
+	for _, u := range config.Ulimits {
+		ulimits = append(ulimits, &container.Ulimit{Name: u.Name, Soft: u.Soft, Hard: u.Hard})
+	}
 	mounts := []mount.Mount{
 		{Type: mount.TypeVolume, Source: name + "-home", Target: "/home"},
 		{Type: mount.TypeVolume, Source: name + "-environment", Target: "/environment"},
@@ -44,7 +48,7 @@ func runtimeContainerOptions(config Config, name string, labels map[string]strin
 		Config: &container.Config{User: "1000:1000", WorkingDir: "/environment/workspace", Labels: labels, Env: environment},
 		HostConfig: &container.HostConfig{ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges", "seccomp=" + config.Seccomp, "apparmor=unconfined"}, NetworkMode: container.NetworkMode(config.Network), ExtraHosts: config.ExtraHosts,
 			MaskedPaths: masked, ReadonlyPaths: readonly, Init: init,
-			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus, Devices: devices}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
+			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus, Devices: devices, Ulimits: ulimits}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
 			Mounts: mounts,
 		},
 	}

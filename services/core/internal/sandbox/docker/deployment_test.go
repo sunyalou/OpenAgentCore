@@ -116,6 +116,14 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	}
 }
 
+func TestRuntimeContainerOptionsCarryUlimits(t *testing.T) {
+	options := runtimeContainerOptions(Config{Ulimits: []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}}, "fixture", nil, nil)
+	ulimits := options.HostConfig.Resources.Ulimits
+	if len(ulimits) != 1 || ulimits[0] == nil || ulimits[0].Name != "memlock" || ulimits[0].Soft != -1 || ulimits[0].Hard != -1 {
+		t.Fatal("ulimits are not applied")
+	}
+}
+
 func TestRuntimeContainerOptionsHostNetwork(t *testing.T) {
 	options := runtimeContainerOptions(Config{Network: "host"}, "fixture", nil, nil)
 	if options.HostConfig.NetworkMode != "host" {

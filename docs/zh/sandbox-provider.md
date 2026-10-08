@@ -1,7 +1,7 @@
 ---
 title: "添加 Sandbox Provider"
 source: docs/sandbox-provider.md
-source_hash: 87318029d3b5b01e7db75d19be1603645c0a8bf3f71ac7feeccd5f6b94c14055
+source_hash: 0a1fd8cf0d8df43ffea412c906f7191b169e169e989bf4687e734b4ec25286b0
 ---
 
 **Sandbox Provider** 为 Core 管理的 Environment 提供 Runtime daemon 运行所需的外层计算资源，以及启动 daemon 的有界引导流程。本指南说明如何添加 Provider，并作为 Core 驱动 Provider 的参考。接口为 [`SandboxProvider`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/internal/sandbox/sandbox_provider.go)。
@@ -227,7 +227,7 @@ Docker Sandbox Provider（[`sandbox/docker`](https://github.com/MiniMax-AI/OpenA
 - deployment specification 中的 CPU 和 memory，128-process limit 和 128 MiB `/tmp` tmpfs；
 - 两个 named volume，label 包含 installation、tenant、Environment 和 allocation：`<name>-home` 挂载到 `/home`，`<name>-environment` 挂载到 `/environment`，后者的 `workspace` 子目录也挂载到 `/workspace`。Docker Engine 必须支持 volume subpath mount；
 - 配置 `nested_sandbox` option 时，解除 Docker `/proc` mask（`/sys/firmware` 和 `/sys/devices/virtual/powercap` 保持 mask），container 运行 init process；
-- node 配置中可选的 `devices` 和只读 `mounts`（[node 配置](configuration.md#docker-node-configuration)）：最多 64 个 `/dev/` 下的规范设备路径，以及最多 16 个挂载到规范 target、且不遮蔽 `/proc`、`/sys`、`/dev`、`/home`、`/environment`、`/workspace` 或 `/tmp` 的主机路径；它们会扩大该节点上每个沙箱的可达范围，只应在受信任的主机上配置。
+- node 配置中可选的 `devices`、只读 `mounts` 和 `ulimits`（[node 配置](configuration.md#docker-node-configuration)）：最多 64 个 `/dev/` 下的规范设备路径，最多 16 个挂载到规范 target、且不遮蔽 `/proc`、`/sys`、`/dev`、`/home`、`/environment`、`/workspace` 或 `/tmp` 的主机路径，以及最多 16 个应用于每个容器的 ulimit（`name`、`soft`、`hard`；`-1` 表示不限制，例如 RDMA 用的 `memlock`）；它们会扩大该节点上每个沙箱的可达范围，只应在受信任的主机上配置。
 
 Create 拒绝复用没有 container 的保留 volume。它将 [Runtime 引导](runtime-bootstrap.md)文件复制到 `/home/runtime/runtime-bootstrap.json`（mode 0600、UID 1000），并将 `/environment` workspace、staging、initialization 和 package directory 放入 container，然后启动 `oac-daemon connect --profile default --bootstrap-file /home/runtime/runtime-bootstrap.json`。创建的 container 不具备配置的 CPU、memory 和精确 image 时，Create 返回 error 和 `CreateSettled`。Docker 没有 lease，因此 Renew 仅读取 container state。Kill 在删除前检查 container 和两个 volume 的 ownership label，再确认三者都已不存在。
 

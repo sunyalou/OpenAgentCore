@@ -119,8 +119,9 @@ The node installer writes Docker’s provider configuration into the node’s co
 | `extra_hosts` | Optional | Additional container host mappings |
 | `devices` | Optional | Canonical host device paths under `/dev/` passed into every Runtime container |
 | `mounts` | Optional | Read-only host paths exposed inside every Runtime container (`source`, `target`) |
+| `ulimits` | Optional | Container resource limits (`name`, `soft`, `hard`; `-1` is unlimited) applied to every Runtime container |
 
-`devices`, `mounts` and a `host` network are operator-managed; the installer does not write them. Keep them on a [manually registered node](./getting-started/nodes.md#register-a-node-manually), whose configuration is not regenerated.
+`devices`, `mounts`, `ulimits` and a `host` network are operator-managed; the installer does not write them. Keep them on a [manually registered node](./getting-started/nodes.md#register-a-node-manually), whose configuration is not regenerated.
 
 The [Docker adapter](./sandbox-provider.md#docker-adapter) owns container isolation, volume layout, device passthrough, host mounts and lifecycle behavior.
 

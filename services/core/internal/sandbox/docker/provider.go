@@ -33,11 +33,18 @@ type Config struct {
 	NestedSandbox                           bool
 	Devices                                 []string
 	Mounts                                  []Mount
+	Ulimits                                 []Ulimit
 	Resources                               *sandbox.Resources
 }
 
 // Mount is one read-only host path exposed inside every Runtime container.
 type Mount struct{ Source, Target string }
+
+// Ulimit is one resource limit applied to every Runtime container.
+type Ulimit struct {
+	Name       string
+	Soft, Hard int64
+}
 type Provider struct {
 	client *client.Client
 	config Config
@@ -46,7 +53,7 @@ type Provider struct {
 var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
-	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) {
+	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) || !validUlimits(config.Ulimits) {
 		return nil, sandbox.ErrInvalid
 	}
 	if config.Resources != nil {
@@ -66,6 +73,7 @@ func validID(v string) bool {
 const (
 	maxDevices = 64
 	maxMounts  = 16
+	maxUlimits = 16
 )
 
 // validDevices accepts deduplicated canonical device paths under /dev.
@@ -109,6 +117,35 @@ func validMountTarget(v string) bool {
 		if v == reserved || strings.HasPrefix(v, reserved+"/") {
 			return false
 		}
+	}
+	return true
+}
+
+// validUlimits accepts uniquely named resource limits; -1 means unlimited.
+func validUlimits(ulimits []Ulimit) bool {
+	if len(ulimits) > maxUlimits {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, u := range ulimits {
+		if !validUlimitName(u.Name) || seen[u.Name] || u.Soft < -1 || u.Hard < -1 || (u.Hard != -1 && (u.Soft == -1 || u.Soft > u.Hard)) {
+			return false
+		}
+		seen[u.Name] = true
+	}
+	return true
+}
+
+func validUlimitName(name string) bool {
+	if name == "" || len(name) > 32 || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
 	}
 	return true
 }

@@ -35,12 +35,20 @@ type Docker struct {
 	NestedSandbox bool     `json:"nested_sandbox"`
 	Devices       []string `json:"devices"`
 	Mounts        []Mount  `json:"mounts"`
+	Ulimits       []Ulimit `json:"ulimits"`
 }
 
 // Mount is one read-only host path exposed inside every Runtime container.
 type Mount struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
+}
+
+// Ulimit is one resource limit applied to every Runtime container.
+type Ulimit struct {
+	Name string `json:"name"`
+	Soft *int64 `json:"soft"`
+	Hard *int64 `json:"hard"`
 }
 
 // Load rejects unknown fields, mixed adapters and explicit null configuration.

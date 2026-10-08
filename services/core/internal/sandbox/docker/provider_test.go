@@ -62,6 +62,19 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 				c.Mounts = append(c.Mounts, Mount{Source: "/opt/xre", Target: fmt.Sprintf("/opt/xre%d", i)})
 			}
 		},
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "MEMLOCK", Soft: -1, Hard: -1}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "", Soft: 1, Hard: 1}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: 2048, Hard: 1024}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: 1024}} },
+		func(c *Config) { c.Ulimits = []Ulimit{{Name: "memlock", Soft: -2, Hard: -2}} },
+		func(c *Config) {
+			c.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}, {Name: "memlock", Soft: -1, Hard: -1}}
+		},
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Ulimits = append(c.Ulimits, Ulimit{Name: fmt.Sprintf("limit%d", i), Soft: 1, Hard: 1})
+			}
+		},
 	} {
 		v := base
 		change(&v)
@@ -72,6 +85,7 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	valid := base
 	valid.Devices = []string{"/dev/xpu0", "/dev/xpuctrl"}
 	valid.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}
+	valid.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}
 	if _, e := New(c, valid); e != nil {
 		t.Fatalf("rejected valid device and mount configuration: %v", e)
 	}
@@ -79,6 +93,18 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	hostNetwork.Network = "host"
 	if _, e := New(c, hostNetwork); e != nil {
 		t.Fatalf("rejected host network: %v", e)
+	}
+	boundary := base
+	boundary.Ulimits = []Ulimit{{Name: "memlock", Soft: 0, Hard: 0}, {Name: "nofile", Soft: 1024, Hard: -1}, {Name: "a_b9", Soft: 1, Hard: 2}}
+	if _, e := New(c, boundary); e != nil {
+		t.Fatalf("rejected valid ulimit boundaries: %v", e)
+	}
+	full := base
+	for i := 0; i < 16; i++ {
+		full.Ulimits = append(full.Ulimits, Ulimit{Name: fmt.Sprintf("limit%d", i), Soft: 1, Hard: 1})
+	}
+	if _, e := New(c, full); e != nil {
+		t.Fatalf("rejected sixteen ulimits: %v", e)
 	}
 }
 
