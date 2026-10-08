@@ -12,6 +12,7 @@ import (
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 )
 
@@ -112,5 +113,28 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	options := runtimeContainerOptions(Config{}, "fixture", nil, nil)
 	if options.HostConfig.NanoCPUs != 2e9 || options.HostConfig.Memory != 2*1024*1024*1024 {
 		t.Fatal("caller-managed defaults changed")
+	}
+}
+
+func TestRuntimeContainerOptionsCarryDevicesAndMounts(t *testing.T) {
+	options := runtimeContainerOptions(Config{Devices: []string{"/dev/xpu0", "/dev/xpuctrl"}, Mounts: []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}}, "fixture", nil, nil)
+	if len(options.HostConfig.Devices) != 2 || options.HostConfig.Devices[0].PathOnHost != "/dev/xpu0" || options.HostConfig.Devices[0].PathInContainer != "/dev/xpu0" || options.HostConfig.Devices[0].CgroupPermissions != "rwm" || options.HostConfig.Devices[1].PathOnHost != "/dev/xpuctrl" {
+		t.Fatal("devices are not passed through")
+	}
+	found := false
+	volumes := 0
+	for _, m := range options.HostConfig.Mounts {
+		if m.Type == mount.TypeVolume {
+			volumes++
+		}
+		if m.Type == mount.TypeBind && m.Source == "/opt/xre" && m.Target == "/opt/xre" && m.ReadOnly {
+			found = true
+		}
+	}
+	if volumes != 3 {
+		t.Fatal("volume layout changed")
+	}
+	if !found {
+		t.Fatal("host mount is not exposed read-only")
 	}
 }

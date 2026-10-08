@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -27,12 +28,52 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	}
 	defer c.Close()
 	base := Config{InstallationID: uuid.NewString(), Image: "test@sha256:" + strings.Repeat("a", 64), Network: "bridge", Seccomp: `{}`}
-	for _, change := range []func(*Config){func(c *Config) { c.Image = "mutable:latest" }, func(c *Config) { c.InstallationID = "" }, func(c *Config) { c.Network = "host" }, func(c *Config) { c.Network = "container:other" }, func(c *Config) { c.Seccomp = "" }} {
+	for _, change := range []func(*Config){
+		func(c *Config) { c.Image = "mutable:latest" },
+		func(c *Config) { c.InstallationID = "" },
+		func(c *Config) { c.Network = "host" },
+		func(c *Config) { c.Network = "container:other" },
+		func(c *Config) { c.Seccomp = "" },
+		func(c *Config) { c.Devices = []string{"relative"} },
+		func(c *Config) { c.Devices = []string{"/dev/../etc/passwd"} },
+		func(c *Config) { c.Devices = []string{"/etc/passwd"} },
+		func(c *Config) { c.Devices = []string{"/dev/xpu0", "/dev/xpu0"} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "relative", Target: "/opt/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/../etc", Target: "/opt/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/workspace/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/dev/xre"}} },
+		func(c *Config) {
+			c.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}, {Source: "/opt/other", Target: "/opt/xre"}}
+		},
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/proc"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/sys/fs"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/home/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/environment/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/opt/xre", Target: "/tmp/xre"}} },
+		func(c *Config) { c.Mounts = []Mount{{Source: "/", Target: "/opt/xre"}} },
+		func(c *Config) {
+			for i := 0; i < 65; i++ {
+				c.Devices = append(c.Devices, fmt.Sprintf("/dev/xpu%d", i))
+			}
+		},
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Mounts = append(c.Mounts, Mount{Source: "/opt/xre", Target: fmt.Sprintf("/opt/xre%d", i)})
+			}
+		},
+	} {
 		v := base
 		change(&v)
 		if _, e := New(c, v); !errors.Is(e, sandbox.ErrInvalid) {
 			t.Fatalf("accepted invalid configuration: %v", e)
 		}
+	}
+	valid := base
+	valid.Devices = []string{"/dev/xpu0", "/dev/xpuctrl"}
+	valid.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}
+	if _, e := New(c, valid); e != nil {
+		t.Fatalf("rejected valid device and mount configuration: %v", e)
 	}
 }
 

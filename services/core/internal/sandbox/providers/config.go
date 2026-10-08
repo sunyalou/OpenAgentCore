@@ -33,6 +33,14 @@ type Docker struct {
 	SeccompFile   string   `json:"seccomp_file"`
 	ExtraHosts    []string `json:"extra_hosts"`
 	NestedSandbox bool     `json:"nested_sandbox"`
+	Devices       []string `json:"devices"`
+	Mounts        []Mount  `json:"mounts"`
+}
+
+// Mount is one read-only host path exposed inside every Runtime container.
+type Mount struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
 }
 
 // Load rejects unknown fields, mixed adapters and explicit null configuration.

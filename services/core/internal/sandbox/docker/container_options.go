@@ -25,19 +25,27 @@ func runtimeContainerOptions(config Config, name string, labels map[string]strin
 		enabled := true
 		init = &enabled
 	}
+	devices := make([]container.DeviceMapping, 0, len(config.Devices))
+	for _, device := range config.Devices {
+		devices = append(devices, container.DeviceMapping{PathOnHost: device, PathInContainer: device, CgroupPermissions: "rwm"})
+	}
+	mounts := []mount.Mount{
+		{Type: mount.TypeVolume, Source: name + "-home", Target: "/home"},
+		{Type: mount.TypeVolume, Source: name + "-environment", Target: "/environment"},
+		// The native sandbox mounts canonical roots, omitting symlink aliases.
+		// Expose the same workspace at its public path; trusted atomic staging
+		// remains entirely on the original /environment mount.
+		{Type: mount.TypeVolume, Source: name + "-environment", Target: "/workspace", VolumeOptions: &mount.VolumeOptions{Subpath: "workspace", NoCopy: true}},
+	}
+	for _, m := range config.Mounts {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: m.Source, Target: m.Target, ReadOnly: true})
+	}
 	return client.ContainerCreateOptions{Name: name, Image: config.Image,
 		Config: &container.Config{User: "1000:1000", WorkingDir: "/environment/workspace", Labels: labels, Env: environment},
 		HostConfig: &container.HostConfig{ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges", "seccomp=" + config.Seccomp, "apparmor=unconfined"}, NetworkMode: container.NetworkMode(config.Network), ExtraHosts: config.ExtraHosts,
 			MaskedPaths: masked, ReadonlyPaths: readonly, Init: init,
-			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
-			Mounts: []mount.Mount{
-				{Type: mount.TypeVolume, Source: name + "-home", Target: "/home"},
-				{Type: mount.TypeVolume, Source: name + "-environment", Target: "/environment"},
-				// The native sandbox mounts canonical roots, omitting symlink aliases.
-				// Expose the same workspace at its public path; trusted atomic staging
-				// remains entirely on the original /environment mount.
-				{Type: mount.TypeVolume, Source: name + "-environment", Target: "/workspace", VolumeOptions: &mount.VolumeOptions{Subpath: "workspace", NoCopy: true}},
-			},
+			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus, Devices: devices}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
+			Mounts: mounts,
 		},
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/MiniMax-AI/OpenAgentCore/internal/agentnetwork"
@@ -23,12 +24,19 @@ const labelPrefix = "io.oac."
 // immutable image contains the qualified native profile and all Runtime binaries.
 // Seccomp is JSON content, not a path on the Docker host. Network must provide
 // trusted daemon/model connectivity; native tool network policy is in the image.
+// Devices and Mounts are host passthroughs the operator opts into per node; they
+// widen what a sandbox can reach and must only be configured on trusted hosts.
 type Config struct {
 	InstallationID, Image, Network, Seccomp string
 	ExtraHosts                              []string
 	NestedSandbox                           bool
+	Devices                                 []string
+	Mounts                                  []Mount
 	Resources                               *sandbox.Resources
 }
+
+// Mount is one read-only host path exposed inside every Runtime container.
+type Mount struct{ Source, Target string }
 type Provider struct {
 	client *client.Client
 	config Config
@@ -37,7 +45,7 @@ type Provider struct {
 var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
-	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || config.Network == "host" || strings.HasPrefix(config.Network, "container:") {
+	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || config.Network == "host" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) {
 		return nil, sandbox.ErrInvalid
 	}
 	if config.Resources != nil {
@@ -52,6 +60,56 @@ func New(c *client.Client, config Config) (*Provider, error) {
 func validID(v string) bool {
 	u, e := uuid.Parse(v)
 	return e == nil && u != uuid.Nil && u.String() == v
+}
+
+const (
+	maxDevices = 64
+	maxMounts  = 16
+)
+
+// validDevices accepts deduplicated canonical device paths under /dev.
+func validDevices(devices []string) bool {
+	if len(devices) > maxDevices {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, device := range devices {
+		if !strings.HasPrefix(device, "/dev/") || path.Clean(device) != device || seen[device] {
+			return false
+		}
+		seen[device] = true
+	}
+	return true
+}
+
+// validMounts accepts canonical absolute source and target paths whose target
+// never shadows a Runtime-owned path. Host mounts are always read-only.
+func validMounts(mounts []Mount) bool {
+	if len(mounts) > maxMounts {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, m := range mounts {
+		if !validAbsolutePath(m.Source) || !validMountTarget(m.Target) || seen[m.Target] {
+			return false
+		}
+		seen[m.Target] = true
+	}
+	return true
+}
+
+func validAbsolutePath(v string) bool { return path.IsAbs(v) && path.Clean(v) == v && v != "/" }
+
+func validMountTarget(v string) bool {
+	if !validAbsolutePath(v) {
+		return false
+	}
+	for _, reserved := range []string{"/proc", "/sys", "/dev", "/home", "/environment", "/workspace", "/tmp"} {
+		if v == reserved || strings.HasPrefix(v, reserved+"/") {
+			return false
+		}
+	}
+	return true
 }
 func validReference(r sandbox.Reference) bool {
 	return validID(r.TenantID) && validID(r.EnvironmentID) && validID(r.AllocationID)
