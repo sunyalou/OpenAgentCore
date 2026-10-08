@@ -190,6 +190,24 @@ for harness in codex claude mcode; do
   image_tags+=("$tag")
 done
 mkdir "$stage/combined"
+mpich_archive="${CORE_DISTRIBUTION_MPICH_ARCHIVE:-$runtime_root/cache/p800_mpich_5.0.0_ch3_nemesis_x86_64.tar.gz}"
+mpich_sha256=f358d5bf6b85b1967768d250817ece385a6ace5178dbbc003c12a5124a26747c
+if [[ ! -f "$mpich_archive" ]]; then
+  mkdir -p "$(dirname "$mpich_archive")"
+  curl --fail --location --proto '=https' --tlsv1.2 \
+    https://klxdcloudlake-1392188322.cos.ap-beijing.myqcloud.com/xccl/ci_test/env/p800_mpich_5.0.0_ch3_nemesis_x86_64.tar.gz \
+    --output "$stage/mpich.download"
+  if ! printf '%s  %s\n' "$mpich_sha256" "$stage/mpich.download" | sha256sum --check --status; then
+    printf 'MPICH archive checksum mismatch\n' >&2
+    exit 1
+  fi
+  mv "$stage/mpich.download" "$mpich_archive"
+fi
+if ! printf '%s  %s\n' "$mpich_sha256" "$mpich_archive" | sha256sum --check --status; then
+  printf 'MPICH archive checksum mismatch\n' >&2
+  exit 1
+fi
+cp "$mpich_archive" "$stage/combined/mpich.tar.gz"
 cp deploy/distribution/Runtime.Dockerfile "$stage/combined/Dockerfile"
 build_image runtime \
   --build-arg "CODEX_IMAGE=${image_tags[0]}" --build-arg "CLAUDE_IMAGE=${image_tags[1]}" \
