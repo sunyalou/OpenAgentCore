@@ -50,7 +50,7 @@ func buildDocker(config Config, _ LocalOptions, result *Built) (func(), error) {
 		return closeProvider, errors.New("invalid managed Docker endpoint")
 	}
 	closeProvider = func() { _ = c.Close() }
-	provider, err := sandboxdocker.New(c, sandboxdocker.Config{InstallationID: config.InstallationID, Image: entry.Image, Network: entry.Network, Seccomp: string(seccomp), ExtraHosts: entry.ExtraHosts, NestedSandbox: entry.NestedSandbox, Devices: entry.Devices, Mounts: mounts, Ulimits: ulimits, Resources: &config.Specification.Resources})
+	provider, err := sandboxdocker.New(c, sandboxdocker.Config{InstallationID: config.InstallationID, Image: entry.Image, Network: entry.Network, Seccomp: string(seccomp), ExtraHosts: entry.ExtraHosts, NestedSandbox: entry.NestedSandbox, Devices: entry.Devices, Mounts: mounts, Ulimits: ulimits, ShmSizeMiB: entry.ShmSizeMiB, PidsLimit: entry.PidsLimit, Resources: &config.Specification.Resources})
 	if err != nil {
 		closeProvider()
 		return func() {}, errors.New("invalid managed Docker provider configuration")

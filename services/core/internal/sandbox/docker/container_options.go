@@ -10,6 +10,13 @@ import (
 // Keep isolation and volume layout identical; only bootstrap authority differs.
 func runtimeContainerOptions(config Config, name string, labels map[string]string, environment []string) client.ContainerCreateOptions {
 	limit := int64(128)
+	if config.PidsLimit != nil {
+		limit = *config.PidsLimit
+	}
+	shmSize := int64(0)
+	if config.ShmSizeMiB != nil {
+		shmSize = *config.ShmSizeMiB * 1024 * 1024
+	}
 	memory, cpus := int64(2*1024*1024*1024), int64(2*1000000000)
 	if config.Resources != nil {
 		memory = int64(config.Resources.MemoryMiB) * 1024 * 1024
@@ -47,7 +54,7 @@ func runtimeContainerOptions(config Config, name string, labels map[string]strin
 	return client.ContainerCreateOptions{Name: name, Image: config.Image,
 		Config: &container.Config{User: "1000:1000", WorkingDir: "/environment/workspace", Labels: labels, Env: environment},
 		HostConfig: &container.HostConfig{ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges", "seccomp=" + config.Seccomp, "apparmor=unconfined"}, NetworkMode: container.NetworkMode(config.Network), ExtraHosts: config.ExtraHosts,
-			MaskedPaths: masked, ReadonlyPaths: readonly, Init: init,
+			MaskedPaths: masked, ReadonlyPaths: readonly, Init: init, ShmSize: shmSize,
 			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus, Devices: devices, Ulimits: ulimits}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
 			Mounts: mounts,
 		},

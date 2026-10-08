@@ -116,6 +116,18 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	}
 }
 
+func TestRuntimeContainerOptionsCarryShmSizeAndPidsLimit(t *testing.T) {
+	shm, pids := int64(131072), int64(4096)
+	options := runtimeContainerOptions(Config{ShmSizeMiB: &shm, PidsLimit: &pids}, "fixture", nil, nil)
+	if options.HostConfig.ShmSize != 131072*1024*1024 || options.HostConfig.Resources.PidsLimit == nil || *options.HostConfig.Resources.PidsLimit != 4096 {
+		t.Fatal("shm size or pids limit is not applied")
+	}
+	defaults := runtimeContainerOptions(Config{}, "fixture", nil, nil)
+	if defaults.HostConfig.ShmSize != 0 || defaults.HostConfig.Resources.PidsLimit == nil || *defaults.HostConfig.Resources.PidsLimit != 128 {
+		t.Fatal("container resource defaults changed")
+	}
+}
+
 func TestRuntimeContainerOptionsCarryUlimits(t *testing.T) {
 	options := runtimeContainerOptions(Config{Ulimits: []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}}, "fixture", nil, nil)
 	ulimits := options.HostConfig.Resources.Ulimits

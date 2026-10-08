@@ -36,6 +36,8 @@ type Docker struct {
 	Devices       []string `json:"devices"`
 	Mounts        []Mount  `json:"mounts"`
 	Ulimits       []Ulimit `json:"ulimits"`
+	ShmSizeMiB    *int64   `json:"shm_size_mib"`
+	PidsLimit     *int64   `json:"pids_limit"`
 }
 
 // Mount is one read-only host path exposed inside every Runtime container.

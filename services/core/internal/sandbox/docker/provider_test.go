@@ -28,6 +28,7 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	}
 	defer c.Close()
 	base := Config{InstallationID: uuid.NewString(), Image: "test@sha256:" + strings.Repeat("a", 64), Network: "bridge", Seccomp: `{}`}
+	zero, negative, over := int64(0), int64(-1), int64(1048577)
 	for _, change := range []func(*Config){
 		func(c *Config) { c.Image = "mutable:latest" },
 		func(c *Config) { c.InstallationID = "" },
@@ -75,6 +76,12 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 				c.Ulimits = append(c.Ulimits, Ulimit{Name: fmt.Sprintf("limit%d", i), Soft: 1, Hard: 1})
 			}
 		},
+		func(c *Config) { c.ShmSizeMiB = &zero },
+		func(c *Config) { c.ShmSizeMiB = &negative },
+		func(c *Config) { c.ShmSizeMiB = &over },
+		func(c *Config) { c.PidsLimit = &zero },
+		func(c *Config) { c.PidsLimit = &negative },
+		func(c *Config) { c.PidsLimit = &over },
 	} {
 		v := base
 		change(&v)
@@ -82,10 +89,13 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 			t.Fatalf("accepted invalid configuration: %v", e)
 		}
 	}
+	shm, pids := int64(131072), int64(4096)
 	valid := base
 	valid.Devices = []string{"/dev/xpu0", "/dev/xpuctrl"}
 	valid.Mounts = []Mount{{Source: "/opt/xre", Target: "/opt/xre"}}
 	valid.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}
+	valid.ShmSizeMiB = &shm
+	valid.PidsLimit = &pids
 	if _, e := New(c, valid); e != nil {
 		t.Fatalf("rejected valid device and mount configuration: %v", e)
 	}

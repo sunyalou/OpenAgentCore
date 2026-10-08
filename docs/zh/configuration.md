@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 14f0acc788c7edf7b0f3d1167f2ccc606db1578e39307361f5977f75866e87d3
+source_hash: a276314ace62e6f52dcc4aa31d74c97174e9263f57f960728605ebb1d3608558
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -124,8 +124,10 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | `devices` | 可选 | 传入每个 Runtime 容器的规范主机设备路径（位于 `/dev/` 下） |
 | `mounts` | 可选 | 在每个 Runtime 容器内暴露的只读主机路径（`source`、`target`） |
 | `ulimits` | 可选 | 应用于每个 Runtime 容器的资源限制（`name`、`soft`、`hard`；`-1` 表示不限制） |
+| `shm_size_mib` | 可选 | 每个 Runtime 容器的 `/dev/shm` 大小（MiB）；省略时使用 Docker 默认值 |
+| `pids_limit` | 可选 | 每个 Runtime 容器的 task 上限；默认为 `128` |
 
-`devices`、`mounts`、`ulimits` 和 `host` 网络由运维管理，安装程序不会写入它们。请将它们放在[手动注册的节点](getting-started/nodes.md#register-a-node-manually)上——手动节点的配置不会被重新生成。
+`devices`、`mounts`、`ulimits`、`shm_size_mib`、`pids_limit` 和 `host` 网络由运维管理，安装程序不会写入它们。请将它们放在[手动注册的节点](getting-started/nodes.md#register-a-node-manually)上——手动节点的配置不会被重新生成。
 
 [Docker 适配器](sandbox-provider.md#docker-adapter)负责容器隔离、卷布局、设备透传、主机挂载和生命周期行为。
 
