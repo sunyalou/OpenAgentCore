@@ -53,7 +53,7 @@ func runtimeContainerOptions(config Config, name string, labels map[string]strin
 	}
 	return client.ContainerCreateOptions{Name: name, Image: config.Image,
 		Config: &container.Config{User: "1000:1000", WorkingDir: "/environment/workspace", Labels: labels, Env: environment},
-		HostConfig: &container.HostConfig{ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges", "seccomp=" + config.Seccomp, "apparmor=unconfined"}, NetworkMode: container.NetworkMode(config.Network), ExtraHosts: config.ExtraHosts,
+		HostConfig: &container.HostConfig{ReadonlyRootfs: true, CapDrop: []string{"ALL"}, CapAdd: config.Capabilities, SecurityOpt: []string{"no-new-privileges", "seccomp=" + config.Seccomp, "apparmor=unconfined"}, NetworkMode: container.NetworkMode(config.Network), ExtraHosts: config.ExtraHosts,
 			MaskedPaths: masked, ReadonlyPaths: readonly, Init: init, ShmSize: shmSize,
 			Resources: container.Resources{PidsLimit: &limit, Memory: memory, NanoCPUs: cpus, Devices: devices, Ulimits: ulimits}, Tmpfs: map[string]string{"/tmp": "rw,nosuid,nodev,size=128m"},
 			Mounts: mounts,

@@ -116,6 +116,16 @@ func TestNilManagedLimitsKeepCallerManagedDefaults(t *testing.T) {
 	}
 }
 
+func TestRuntimeContainerOptionsCarryCapabilities(t *testing.T) {
+	options := runtimeContainerOptions(Config{Capabilities: []string{"SYS_PTRACE", "IPC_LOCK"}}, "fixture", nil, nil)
+	if len(options.HostConfig.CapAdd) != 2 || options.HostConfig.CapAdd[0] != "SYS_PTRACE" || options.HostConfig.CapAdd[1] != "IPC_LOCK" {
+		t.Fatal("capabilities are not added")
+	}
+	if len(options.HostConfig.CapDrop) != 1 || options.HostConfig.CapDrop[0] != "ALL" {
+		t.Fatal("the drop-all default changed")
+	}
+}
+
 func TestRuntimeContainerOptionsCarryShmSizeAndPidsLimit(t *testing.T) {
 	shm, pids := int64(131072), int64(4096)
 	options := runtimeContainerOptions(Config{ShmSizeMiB: &shm, PidsLimit: &pids}, "fixture", nil, nil)

@@ -27,7 +27,8 @@ const labelPrefix = "io.oac."
 // which shares the host's network stack. Native tool network policy is in the image.
 // Devices and Mounts are host passthroughs the operator opts into per node; they
 // widen what a sandbox can reach and must only be configured on trusted hosts.
-// ShmSizeMiB and PidsLimit are operator resource overrides for every container.
+// Capabilities are added to the default drop-all set. ShmSizeMiB and PidsLimit
+// are operator resource overrides for every container.
 type Config struct {
 	InstallationID, Image, Network, Seccomp string
 	ExtraHosts                              []string
@@ -35,6 +36,7 @@ type Config struct {
 	Devices                                 []string
 	Mounts                                  []Mount
 	Ulimits                                 []Ulimit
+	Capabilities                            []string
 	ShmSizeMiB                              *int64
 	PidsLimit                               *int64
 	Resources                               *sandbox.Resources
@@ -56,7 +58,7 @@ type Provider struct {
 var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
-	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) || !validUlimits(config.Ulimits) || !validShmSize(config.ShmSizeMiB) || !validPidsLimit(config.PidsLimit) {
+	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || strings.HasPrefix(config.Network, "container:") || !validDevices(config.Devices) || !validMounts(config.Mounts) || !validUlimits(config.Ulimits) || !validCapabilities(config.Capabilities) || !validShmSize(config.ShmSizeMiB) || !validPidsLimit(config.PidsLimit) {
 		return nil, sandbox.ErrInvalid
 	}
 	if config.Resources != nil {
@@ -74,11 +76,12 @@ func validID(v string) bool {
 }
 
 const (
-	maxDevices    = 64
-	maxMounts     = 16
-	maxUlimits    = 16
-	maxShmSizeMiB = 1048576
-	maxPidsLimit  = 1048576
+	maxDevices      = 64
+	maxMounts       = 16
+	maxUlimits      = 16
+	maxCapabilities = 16
+	maxShmSizeMiB   = 1048576
+	maxPidsLimit    = 1048576
 )
 
 // validDevices accepts deduplicated canonical device paths under /dev.
@@ -162,6 +165,37 @@ func validShmSize(mib *int64) bool { return mib == nil || (*mib >= 1 && *mib <= 
 func validPidsLimit(limit *int64) bool {
 	return limit == nil || (*limit >= 1 && *limit <= maxPidsLimit)
 }
+
+// validCapabilities accepts deduplicated Linux capability names added on top
+// of the default drop-all set; ALL is never granted.
+func validCapabilities(capabilities []string) bool {
+	if len(capabilities) > maxCapabilities {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, capability := range capabilities {
+		if !validCapabilityName(capability) || seen[capability] {
+			return false
+		}
+		seen[capability] = true
+	}
+	return true
+}
+
+func validCapabilityName(name string) bool {
+	if name == "" || name == "ALL" || len(name) > 32 || name[0] < 'A' || name[0] > 'Z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func validReference(r sandbox.Reference) bool {
 	return validID(r.TenantID) && validID(r.EnvironmentID) && validID(r.AllocationID)
 }

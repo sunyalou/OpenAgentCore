@@ -82,6 +82,17 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 		func(c *Config) { c.PidsLimit = &zero },
 		func(c *Config) { c.PidsLimit = &negative },
 		func(c *Config) { c.PidsLimit = &over },
+		func(c *Config) { c.Capabilities = []string{"ALL"} },
+		func(c *Config) { c.Capabilities = []string{"sys_ptrace"} },
+		func(c *Config) { c.Capabilities = []string{"SYS-PTRACE"} },
+		func(c *Config) { c.Capabilities = []string{""} },
+		func(c *Config) { c.Capabilities = []string{strings.Repeat("A", 33)} },
+		func(c *Config) { c.Capabilities = []string{"SYS_PTRACE", "SYS_PTRACE"} },
+		func(c *Config) {
+			for i := 0; i < 17; i++ {
+				c.Capabilities = append(c.Capabilities, fmt.Sprintf("CAP%d", i))
+			}
+		},
 	} {
 		v := base
 		change(&v)
@@ -96,6 +107,7 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	valid.Ulimits = []Ulimit{{Name: "memlock", Soft: -1, Hard: -1}}
 	valid.ShmSizeMiB = &shm
 	valid.PidsLimit = &pids
+	valid.Capabilities = []string{"SYS_PTRACE", "IPC_LOCK"}
 	if _, e := New(c, valid); e != nil {
 		t.Fatalf("rejected valid device and mount configuration: %v", e)
 	}
@@ -115,6 +127,18 @@ func TestProviderRejectsUnsafeOperatorConfiguration(t *testing.T) {
 	}
 	if _, e := New(c, full); e != nil {
 		t.Fatalf("rejected sixteen ulimits: %v", e)
+	}
+	longCap := base
+	longCap.Capabilities = []string{strings.Repeat("A", 32)}
+	if _, e := New(c, longCap); e != nil {
+		t.Fatalf("rejected a 32-byte capability name: %v", e)
+	}
+	manyCaps := base
+	for i := 0; i < 16; i++ {
+		manyCaps.Capabilities = append(manyCaps.Capabilities, fmt.Sprintf("CAP%d", i))
+	}
+	if _, e := New(c, manyCaps); e != nil {
+		t.Fatalf("rejected sixteen capabilities: %v", e)
 	}
 }
 

@@ -36,6 +36,7 @@ type Docker struct {
 	Devices       []string `json:"devices"`
 	Mounts        []Mount  `json:"mounts"`
 	Ulimits       []Ulimit `json:"ulimits"`
+	Capabilities  []string `json:"capabilities"`
 	ShmSizeMiB    *int64   `json:"shm_size_mib"`
 	PidsLimit     *int64   `json:"pids_limit"`
 }
