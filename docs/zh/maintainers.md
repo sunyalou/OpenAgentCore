@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: adf81c3f9d3e7c00e941c9756def0a22f93a866a23ed287fbfd7da85caa4b348
+source_hash: 8bda29a57811afac5238fab777ac58a6f7eb8095be18710d2d0079782e6858dd
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -33,6 +33,7 @@ make build-core-distribution
 | `CORE_DISTRIBUTION_BUILD_DIR` | `~/.oac` 下的输出目录。默认值：`~/.oac/build/core-distribution` |
 | `CORE_DISTRIBUTION_BUILD_NETWORK` | Docker 构建网络：`default`、`host` 或 `none` |
 | `CORE_DISTRIBUTION_MICROSANDBOX_ARCHIVE` | 已缓存的 microsandbox 发布归档。默认值：`~/.oac/cache/microsandbox-v0.7.2-linux-x86_64.tar.gz`，缺失时下载 |
+| `CORE_DISTRIBUTION_MPICH_ARCHIVE` | 用于 XCCL 工作负载的已缓存 MPICH 归档。默认值：`~/.oac/cache/p800_mpich_5.0.0_ch3_nemesis_x86_64.tar.gz`，缺失时下载 |
 | `CORE_DISTRIBUTION_DATABASE_IMAGE` | PostgreSQL 16 镜像；默认值通过其 linux/amd64 清单摘要固定 |
 
 构建过程会复用 Core、Web、Runtime、SDK 和辅助程序构建器。清单会记录提交和源代码树、镜像配置及 OCI 清单摘要、Runtime OCI 清单摘要、microsandbox 运行时和固件哈希，以及每个 Runtime 和节点构件的大小与 SHA-256；原生安装器在[目录](#native-installers)中仅记录其 SHA-256。输出包括控制归档及其 `.sha256`、可选的离线归档，以及带版本号的 Runtime、节点和原生安装器资源。此过程不会发布任何内容。如果目标目录中已包含此提交的分发包，重建会拒绝执行。
@@ -88,7 +89,7 @@ docker build --platform linux/amd64 -t oac-runtime:mcode "${OAC_DEV_HOME:-$HOME/
 
 `scripts/prepare-release-runtimes.sh` 会根据固定版本配置运行配套程序构建。
 
-分发包将三个 Harness 镜像合并到一个 Runtime 镜像（`deploy/distribution/Runtime.Dockerfile`）中：以携带守护进程的 MiniMax Code 镜像为基础，并复制入 Codex 可执行文件及资源和 Claude SDK 包。构建过程会验证每个镜像都携带由同一提交构建的守护进程。
+分发包将三个 Harness 镜像合并到一个 Runtime 镜像（`deploy/distribution/Runtime.Dockerfile`）中：以携带守护进程的 MiniMax Code 镜像为基础，并复制入 Codex 可执行文件及资源和 Claude SDK 包。构建过程会为 XCCL 工作负载安装 RDMA 用户态与固定版本的 MPICH 启动器，并验证每个镜像都携带由同一提交构建的守护进程。
 
 **E2B 辅助程序。**
 
