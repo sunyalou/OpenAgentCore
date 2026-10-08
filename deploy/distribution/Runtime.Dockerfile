@@ -22,6 +22,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ldconfig
 ENV PATH=/opt/mpich/bin:$PATH
 
+# XCCL builds run inside the sandbox: the C/C++ toolchain, wget for the
+# build's pinned dependency downloads, and preset paths that keep the build
+# from cloning rdma-core, gtest and gflags over the internal git.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake pkg-config wget zlib1g-dev libgtest-dev libgflags-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/xccl-deps/gtest/lib /opt/xccl-deps/gtest/include \
+                /opt/xccl-deps/gflags/lib /opt/xccl-deps/gflags/include \
+    && ln -s /usr/lib/x86_64-linux-gnu/libgtest.a /opt/xccl-deps/gtest/lib/libgtest.a \
+    && ln -s /usr/include/gtest /opt/xccl-deps/gtest/include/gtest \
+    && ln -s /usr/lib/x86_64-linux-gnu/libgflags.a /opt/xccl-deps/gflags/lib/libgflags.a \
+    && ln -s /usr/include/gflags /opt/xccl-deps/gflags/include/gflags
+ENV CMAKE_PATH=/usr \
+    GTEST_PATH=/opt/xccl-deps/gtest \
+    GFLAGS_PATH=/opt/xccl-deps/gflags \
+    USE_SYSTEM_RDMA=ON
+
 # Keep the shared daemon and dependencies from the MiniMax base.
 # Native harness packages remain outside the workspace.
 COPY --from=codex /usr/local/bin/codex /usr/local/bin/codex

@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: 8bda29a57811afac5238fab777ac58a6f7eb8095be18710d2d0079782e6858dd
+source_hash: 57b4f97baa7600fc867f265566ffbbff986ebcbcb0afaef08f8911003ef77eaf
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -89,7 +89,7 @@ docker build --platform linux/amd64 -t oac-runtime:mcode "${OAC_DEV_HOME:-$HOME/
 
 `scripts/prepare-release-runtimes.sh` 会根据固定版本配置运行配套程序构建。
 
-分发包将三个 Harness 镜像合并到一个 Runtime 镜像（`deploy/distribution/Runtime.Dockerfile`）中：以携带守护进程的 MiniMax Code 镜像为基础，并复制入 Codex 可执行文件及资源和 Claude SDK 包。构建过程会为 XCCL 工作负载安装 RDMA 用户态与固定版本的 MPICH 启动器，并验证每个镜像都携带由同一提交构建的守护进程。
+分发包将三个 Harness 镜像合并到一个 Runtime 镜像（`deploy/distribution/Runtime.Dockerfile`）中：以携带守护进程的 MiniMax Code 镜像为基础，并复制入 Codex 可执行文件及资源和 Claude SDK 包。构建过程会为 XCCL 工作负载安装 RDMA 用户态、固定版本的 MPICH 启动器以及 C/C++ 构建工具链，并设置 `CMAKE_PATH`、`GTEST_PATH`、`GFLAGS_PATH` 和 `USE_SYSTEM_RDMA` 预设，让构建无需从内部 git 克隆依赖；然后验证每个镜像都携带由同一提交构建的守护进程。
 
 **E2B 辅助程序。**
 
