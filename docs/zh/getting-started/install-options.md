@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 61c9a31f84b11cf2eef83b6a73bfbf5e939e76c3871c03df0fcdbb67d70bc972
+source_hash: 976607c03845d22fc7360f5ff735d6a8f2830b248e502bb3b05decabe0a575a5
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -125,7 +125,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'OpenAI-Beta: agents=v1' https://cor
 
 `401` 表示 `/v1` 已到达 Core，Core 正在要求提供密钥。`404` 表示请求已到达 Web：请修复反向代理，否则应用调用和每个节点连接都会失败。
 
-所有位置都必须保持启用 TLS 验证。使用私有证书颁发机构时，节点主机、自托管机器和 Runtime 镜像必须信任该机构。对于节点主机，在执行 Web 命令前将 `OAC_CORE_CA` 设为该 CA 文件的绝对路径：命令将其作为 `--cacert` 传给 `curl`，作为 `--core-ca` 传给安装程序，安装程序在系统信任库之外追加该 CA 来校验 Core，并为节点自身的连接保留私有副本。同一 CA 契约也覆盖卸载命令和[手动注册](nodes.md#register-a-node-manually)；自托管执行器和 Runtime 镜像各自通过其主机配置信任该 CA。
+所有位置都必须保持启用 TLS 验证。使用私有证书颁发机构时，节点主机、自托管机器和 Runtime 镜像必须信任该机构。对于节点主机，在执行 Web 安装命令前将 `OAC_CORE_CA` 设为该 CA 文件的绝对路径：命令将其作为 `--cacert` 传给 `curl`，作为 `--core-ca` 传给安装程序，安装程序在系统信任库之外追加该 CA 来校验 Core，并为节点自身的连接保留私有副本。卸载命令仅将其用于下载（`--cacert`）；其 Core 移除检查复用保留身份中的 CA。[手动注册](nodes.md#register-a-node-manually) 将同一 CA 传给 `oac-node register`。自托管执行器和 Runtime 镜像各自通过其主机配置信任该 CA。
 
 ### 使用快速隧道进行本地试用 {#try-it-locally-with-a-quick-tunnel}
 

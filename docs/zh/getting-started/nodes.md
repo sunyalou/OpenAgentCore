@@ -1,7 +1,7 @@
 ---
 title: "添加和管理节点"
 source: docs/getting-started/nodes.md
-source_hash: d8d221ec297887a1bfdedeccd56601686c05176f7c3c195b20733a09c22bb420
+source_hash: 42d781d536aa3959d811ebff56847f9648d96ce119c6b7e5e70800777dabcefe
 ---
 
 节点是一台 Linux 主机，在沙箱后端为 Docker 或 microsandbox 时，为 Core 托管 Session 运行沙箱。Core 将新 Session 分配给有空余容量的节点；节点创建沙箱，沙箱回连 Core。E2B 不需要节点。应用为自己的 Session 连接的机器是[自托管执行器](self-hosted.md)，而不是节点。
@@ -137,7 +137,7 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
    $s python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --uninstall --installation-id '<installation-id>')
    ```
 
-卸载先向节点注册时使用的 Core 地址确认节点是否已移除；Core 仍列出该节点时拒绝卸载。设置 `OAC_CORE_CA` 时，卸载命令携带相同的 `--cacert "$OAC_CORE_CA"` 和 `--core-ca "$OAC_CORE_CA"`，使移除检查使用节点的私有 CA 校验 Core。注册地址与当前公开 URL 不同时，对话框还展示 **Old Core address gone?**：该地址不再响应时，提供带 `--force` 的命令以跳过检查；先在 Nodes 页面移除节点。不使用对话框时，从 `https://core.example/node-install/SHA256SUMS` 的 `node-install.pyz` 行获取安装程序 SHA-256。卸载停止并移除服务、节点状态、记录和 Docker 网络。只有安装程序创建了 `oac-node` 且不再有节点时，才删除该账号；复用的账号仅移除安装程序添加的组。
+卸载先向节点注册时使用的 Core 地址确认节点是否已移除；Core 仍列出该节点时拒绝卸载。设置 `OAC_CORE_CA` 时，卸载命令仅给安装程序下载追加 `--cacert "$OAC_CORE_CA"`，不向安装程序传 CA flag；移除检查复用保留身份中的 CA 校验 Core。注册地址与当前公开 URL 不同时，对话框还展示 **Old Core address gone?**：该地址不再响应时，提供带 `--force` 的命令以跳过检查；先在 Nodes 页面移除节点。不使用对话框时，从 `https://core.example/node-install/SHA256SUMS` 的 `node-install.pyz` 行获取安装程序 SHA-256。卸载停止并移除服务、节点状态、记录和 Docker 网络。只有安装程序创建了 `oac-node` 且不再有节点时，才删除该账号；复用的账号仅移除安装程序添加的组。
 
 程序不删除沙箱、卷或镜像。保留 Runtime 镜像并输出 `docker image rm` 命令。microsandbox 保留 `/var/lib/oac-node/.oac/m/` 存储，并输出删除方法（`sudo -u oac-node rm -rf <store>`）；存储删除前保留所创建的账号，之后重新卸载。使用 `--force` 时 microVM 可能仍使用存储，请先检查 `pgrep -u oac-node`。可以重复卸载直到完成。
 
