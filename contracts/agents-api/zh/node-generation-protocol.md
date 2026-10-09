@@ -1,7 +1,7 @@
 ---
 title: "沙箱节点协议"
 source: contracts/agents-api/node-generation-protocol.md
-source_hash: b67076a5ea3b9e13c18bc444d21f645e7af6c86c8e104ae0b6653433081c4b7b
+source_hash: 272ce969713e2e5d3b8de0c3c018b4706bdaba91c4a8cf9205988032c7a158f1
 ---
 
 沙箱节点在其主机上运行 Docker 或 microsandbox Provider，并通过一个 WebSocket 与 Core 相连。Core 通过该连接发送 Provider 操作；节点针对本地 Provider 执行这些操作，并报告就绪状态、主机测量值及其持有的部署代次。Core 始终是唯一的生命周期所有者：节点绝不重试变更操作或调度工作。帧和校验器位于 [`services/core/internal/sandbox/node`](https://github.com/MiniMax-AI/OpenAgentCore/tree/main/services/core/internal/sandbox/node)（`wire.go`、`generation_wire.go`）；节点用于注册和读取配置的 HTTP 路由位于[机器连接 API](machine-api.md#node-routes)。
@@ -93,7 +93,7 @@ Core 的丢弃授权是回收的必要条件，但并非充分条件。排队和
 
 ## 完全匹配的新安装 {#matched-fresh-installation}
 
-主机程序版本与 Core 选择的 Runtime 版本彼此独立。全新节点从控制台当前版本获取其可执行文件和私有准备器，并从经认证的配置中读取确切的 Runtime 源、镜像身份以及原生运行时和固件摘要。制品传输使用节点保留身份中的策略：HTTPS，或在该身份记录了 `allow_insecure_origin` 时仅从已登记的明文控制台源地址使用明文 HTTP。当该 Runtime 较旧时，控制台仍会提供其不可变的 `releases/<source>/` 清单、校验和以及允许列表中的制品：Runtime 辅助程序、固件、seccomp 配置文件和镜像字节都来自所选版本；即使下载期间控制台的当前版本发生变化，制品 URL 仍固定到已验证的清单。
+主机程序版本与 Core 选择的 Runtime 版本彼此独立。全新节点从控制台当前版本获取其可执行文件和私有准备器，并从经认证的配置中读取确切的 Runtime 源、镜像身份以及原生运行时和固件摘要。制品传输使用节点保留身份中的策略：HTTPS，或在该身份记录了 `allow_insecure_origin` 时仅从已登记的明文控制台源地址使用明文 HTTP。保留身份还会记录节点登记时使用的 Core CA（`core_ca` 及其 `core_ca_sha256`）；节点在系统信任库之外追加该 CA 来校验 Core，且只有 `register` 接受 `--core-ca`。当该 Runtime 较旧时，控制台仍会提供其不可变的 `releases/<source>/` 清单、校验和以及允许列表中的制品：Runtime 辅助程序、固件、seccomp 配置文件和镜像字节都来自所选版本；即使下载期间控制台的当前版本发生变化，制品 URL 仍固定到已验证的清单。
 
 所需的保留版本缺失时，安装会被拒绝，而不会替换为当前 Runtime；仅包含另一个 Runtime 的本地捆绑包也会导致拒绝。所有这些拒绝都发生在安装器写入节点身份、导入 Runtime、注册节点或启动服务之前。
 

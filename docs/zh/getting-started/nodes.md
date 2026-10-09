@@ -1,7 +1,7 @@
 ---
 title: "添加和管理节点"
 source: docs/getting-started/nodes.md
-source_hash: 50888111d2ac93496f78e4c815d47ed8ab6e8bc71d688e02b72e7c451f447736
+source_hash: 42d781d536aa3959d811ebff56847f9648d96ce119c6b7e5e70800777dabcefe
 ---
 
 节点是一台 Linux 主机，在沙箱后端为 Docker 或 microsandbox 时，为 Core 托管 Session 运行沙箱。Core 将新 Session 分配给有空余容量的节点；节点创建沙箱，沙箱回连 Core。E2B 不需要节点。应用为自己的 Session 连接的机器是[自托管执行器](self-hosted.md)，而不是节点。
@@ -11,6 +11,7 @@ source_hash: 50888111d2ac93496f78e4c815d47ed8ab6e8bc71d688e02b72e7c451f447736
 ## 添加节点前 {#before-you-add-a-node}
 
 - **Core 已有主机及沙箱可访问的 HTTPS 公开 URL。** 节点从 Core 控制台下载文件，并通过 `public_url` 连接 Core。设置前，Add node 显示 *Set a public HTTPS address before adding nodes*；参阅[配置公开地址](install.md#configure-the-domain-and-https)。使用 `OAC_ALLOW_INSECURE_ORIGIN=1` 的开发安装可以改用非回环的 `http://` URL：生成的命令会携带 `--allow-insecure-origin`，制品下载与节点连接均为明文。
+- **主机信任 Core 的证书。** Core 的 HTTPS 证书由主机系统信任库尚未持有的私有证书颁发机构签发时，在执行生成命令的 shell 中将 `OAC_CORE_CA` 设为该 CA 文件的绝对路径。Web 会给安装程序下载追加 `--cacert "$OAC_CORE_CA"`，并给安装程序追加 `--core-ca "$OAC_CORE_CA"`，安装程序据此在系统信任库**之外**追加该 CA 来校验 Core。安装程序会在节点状态中保留一份私有副本，因此 `oac-node run` 复用它且不接受 CA flag。CA 文件缺失、不可读或无法解析时命令停止。
 - **沙箱配置已保存。** 打开 **System** → **Manage sandbox configuration**，选择 **Own machines**、后端和沙箱规格，最后选择 **Save configuration**。要更改已保存的配置，先选择 **Reset deployment**。同一安装的所有节点使用同一后端。
 - **控制台能提供节点文件。** 节点从控制台下载 Runtime 和提供商文件；控制台缺少文件时重定向到发行下载地址。节点依据发行清单检查各文件的大小和 SHA-256。因此节点主机需要能访问发行下载地址。缺少文件时，Add node 显示 *This console has no node files for …*。
 
@@ -44,6 +45,19 @@ printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR
 - 令牌通过标准输入传给安装程序，不出现在进程参数、环境变量或 sudo 日志中。
 - 当 `HISTCONTROL` 忽略以空格开头的行时（Debian 和 Ubuntu 默认如此），前导空格能避免命令进入 shell 历史。
 
+设置 `OAC_CORE_CA` 为绝对路径后，Web 会在同一命令中加入私有 CA：
+
+```sh
+ (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
+printf '\n==> Downloading node installer...\n' &&
+curl -fsS --max-time 30 --max-filesize 1048576 --cacert "$OAC_CORE_CA" 'https://core.example/node-install/node-install.pyz' -o "$d/node-install.pyz" &&
+printf '==> Verifying node installer...\n' &&
+printf '%s  %s\n' '<installer-sha256>' "$d/node-install.pyz" | sha256sum -c --status &&
+printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --enrollment-token-stdin --source-url 'https://core.example' --core-url 'https://core.example' --core-ca "$OAC_CORE_CA" --provider 'docker' --installation-id '<installation-id>')
+```
+
+`OAC_CORE_CA` 只是生成命令的 shell 输入；Core 和 Web 从不读取它。路径不能包含空白，且运行命令的账号必须可读（安装程序以 root 读取，然后为节点保存私有副本）。未设置时，生成的命令不变，仅使用主机系统信任库。
+
 安装程序逐阶段展示执行过程，Core 确认节点后展示状态与日志命令摘要。`export NO_COLOR=1` 禁用颜色；命令将其作为 `--no-color` 传过 sudo。程序不输出令牌。
 
 ### 主机要求 {#host-requirements}
@@ -53,7 +67,7 @@ printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR
 - Docker：正在运行的 rootful Docker Engine，其 `/var/run/docker.sock` 套接字属于 `docker` 组，权限为 `0660`，并强制执行 CPU 和内存限制（cgroup v2）。
 - microsandbox：`/dev/kvm` 属于 `kvm` 组（硬件或嵌套虚拟化），并具有 microsandbox 链接的库（glibc）。
 - CPU 和内存至少足以运行一个所配置规格的沙箱，以及约 2 GB 的 Runtime 镜像磁盘空间。
-- 可通过公开 URL 以 HTTPS 访问控制台和 Core；沙箱也能访问 Core。
+- 可通过公开 URL 以 HTTPS 访问控制台和 Core；沙箱也能访问 Core。Core 使用主机系统信任库未持有的私有证书颁发机构时，通过 `OAC_CORE_CA` 提供；否则安装程序下载和每个节点请求都会因证书错误失败。
 
 ### 通过代理下载 {#download-through-a-proxy}
 
@@ -70,7 +84,7 @@ printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR
 | 服务用户 | 系统用户 `oac-node`，主目录 `/var/lib/oac-node`，无登录 shell。已有账号的主目录相同且 shell 为 nologin 时会复用；其他名为 `oac-node` 的账号会被拒绝 |
 | 用户组 | 拥有 `/var/run/docker.sock`（Docker）或 `/dev/kvm`（microsandbox）的组：仅 `docker` 或 `kvm` |
 | 服务 | `/etc/systemd/system/oac-node-<installation-id>.service`，root 所属的系统单元，使用 `User=oac-node`，开机启用。Core 无法访问时每 5 秒重启；Core 不再接受节点后永久停止 |
-| 节点状态 | `/var/lib/oac-node/.oac/nodes/<installation-id>/`：身份、配置和节点文件。microsandbox 在 `/var/lib/oac-node/.oac/m/` 保存镜像和沙箱 |
+| 节点状态 | `/var/lib/oac-node/.oac/nodes/<installation-id>/`：身份、配置、节点文件，以及传入 `--core-ca` 时的私有 Core CA 副本。microsandbox 在 `/var/lib/oac-node/.oac/m/` 保存镜像和沙箱 |
 | 记录 | `/etc/oac-node/`：安装程序创建或修改的内容，用于重新运行和卸载 |
 | Docker | 一次性导入 Runtime 镜像，以及网络 `oac-node-<installation-id>` |
 | microsandbox 网络策略 | 沙箱仅能访问 Core、主机上的 DNS 和公开地址：无入站连接、不可访问私有网络。私有模型或 MCP 端点需要在节点上修改策略 |
@@ -123,7 +137,7 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
    $s python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --uninstall --installation-id '<installation-id>')
    ```
 
-卸载先向节点注册时使用的 Core 地址确认节点是否已移除；Core 仍列出该节点时拒绝卸载。注册地址与当前公开 URL 不同时，对话框还展示 **Old Core address gone?**：该地址不再响应时，提供带 `--force` 的命令以跳过检查；先在 Nodes 页面移除节点。不使用对话框时，从 `https://core.example/node-install/SHA256SUMS` 的 `node-install.pyz` 行获取安装程序 SHA-256。卸载停止并移除服务、节点状态、记录和 Docker 网络。只有安装程序创建了 `oac-node` 且不再有节点时，才删除该账号；复用的账号仅移除安装程序添加的组。
+卸载先向节点注册时使用的 Core 地址确认节点是否已移除；Core 仍列出该节点时拒绝卸载。设置 `OAC_CORE_CA` 时，卸载命令仅给安装程序下载追加 `--cacert "$OAC_CORE_CA"`，不向安装程序传 CA flag；移除检查复用保留身份中的 CA 校验 Core。注册地址与当前公开 URL 不同时，对话框还展示 **Old Core address gone?**：该地址不再响应时，提供带 `--force` 的命令以跳过检查；先在 Nodes 页面移除节点。不使用对话框时，从 `https://core.example/node-install/SHA256SUMS` 的 `node-install.pyz` 行获取安装程序 SHA-256。卸载停止并移除服务、节点状态、记录和 Docker 网络。只有安装程序创建了 `oac-node` 且不再有节点时，才删除该账号；复用的账号仅移除安装程序添加的组。
 
 程序不删除沙箱、卷或镜像。保留 Runtime 镜像并输出 `docker image rm` 命令。microsandbox 保留 `/var/lib/oac-node/.oac/m/` 存储，并输出删除方法（`sudo -u oac-node rm -rf <store>`）；存储删除前保留所创建的账号，之后重新卸载。使用 `--force` 时 microVM 可能仍使用存储，请先检查 `pgrep -u oac-node`。可以重复卸载直到完成。
 
@@ -154,6 +168,8 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
 节点移除后，Core 拒绝其凭据时，`oac-node run` 以状态 78 退出；配置管理器不要在该情况下重启（systemd：`RestartPreventExitStatus=78`）。
 
 为开发或测试而在非回环 `http://` 源地址上注册时，在 `oac-node register` 上添加 `--allow-insecure-origin`。节点随后以明文 HTTP 下载制品并保持 `ws://` 连接；`oac-node run` 不接受该 flag，而使用注册时记录的策略。明文 HTTP 不提供传输加密，不适用于生产环境。
+
+当 Core 的证书由主机系统信任库未持有的私有证书颁发机构签发时，在 `oac-node register` 上添加 `--core-ca /path/to/ca.pem`。节点在系统信任库之外追加该文件来校验 Core，并在身份中记录路径及其 SHA-256。`oac-node run` 和生成辅助程序不接受 CA flag：它们加载已记录的文件，文件缺失或变更时拒绝启动。路径必须为绝对路径，且文件是节点的服务账号可读的 PEM 证书；`--core-ca` 仅适用于 `register`。
 
 节点向外连接 Core；Core 不需要通过 SSH 或 Docker TCP 访问主机。注册在联系 Core 前先将节点身份写入状态目录，因此响应丢失时可以复用同一身份重试。状态目录放在持久存储上，仅节点账号可访问，每次只由一个进程使用。不要复制到其他目录或主机：节点已有连接打开时，Core 拒绝第二个连接。提供商文件不能修改节点容量或沙箱配置。Core 在注册及每次连接时比较摘要；文件不匹配的节点在恢复批准配置前不接收工作。
 
@@ -199,6 +215,9 @@ root 只准备账号、组和服务单元；其他操作（包括 Docker 网络�
 | KVM is unavailable, or `/dev/kvm` must be group-accessible | 启用虚拟化；发行版的 KVM 包会设置 `root:kvm 0660` |
 | This host has N CPUs and M MiB of memory; each sandbox needs … | 使用更大主机或修改沙箱规格 |
 | SELinux is enforcing on this host | 使用安装程序支持的主机；程序不修改 SELinux 设置 |
+| `--core-ca must be an absolute path to a regular file without symlinks`，或 `--core-ca is not a PEM certificate file` | 修正 `OAC_CORE_CA` 使其指向私有 CA 文件，然后重试 |
+| This host's node was installed with a different Core CA | 节点使用另一个 CA 添加。在 Web 移除、卸载，然后重新添加 |
+| Retained node Core CA is missing or differs | 恢复节点身份中记录的 CA 文件，或移除节点后重新添加 |
 | This host already runs a sudo-mode node for another Core | 先移除并卸载该节点 |
 | Node installation and removal require root | 通过 sudo 或 root shell 执行 Web 命令 |
 | Core still lists this node | 先在 Nodes 页面移除 |

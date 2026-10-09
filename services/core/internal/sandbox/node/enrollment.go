@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"time"
 )
 
 // Enroll consumes a short-lived enrollment token. InitIdentity must have been
@@ -33,7 +32,10 @@ func Enroll(ctx context.Context, coreURL, dir, token string, input EnrollmentReq
 	input.NodeID, input.Credential = stored.Identity.NodeID, stored.Credential
 	input.Provider, input.BackendFingerprint = stored.Identity.Provider, stored.Identity.BackendFingerprint
 	input.CoreURL = coreURL
-	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client, err := coreHTTPClient(stored.CoreCA)
+	if err != nil {
+		return StoredIdentity{}, err
+	}
 	// This also recovers a consumed registration whose success response was lost.
 	target, err := stored.coreEndpoint("/api/v1/sandbox-node/identity")
 	if err != nil {
@@ -130,7 +132,10 @@ func RefreshIdentity(ctx context.Context, dir string) (StoredIdentity, error) {
 		return StoredIdentity{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+stored.Credential)
-	client := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client, err := coreHTTPClient(stored.CoreCA)
+	if err != nil {
+		return StoredIdentity{}, err
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return StoredIdentity{}, errors.New("cannot confirm approved node capacity")

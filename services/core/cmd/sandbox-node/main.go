@@ -57,6 +57,7 @@ func run(ctx context.Context, args []string) error {
 	name := flags.String("name", "sandbox-node", "display name (register only)")
 	tokenFile := flags.String("enrollment-token-file", "", "private single-use enrollment token file (register only)")
 	allowInsecureOrigin := flags.Bool("allow-insecure-origin", false, "Allow a non-loopback plaintext http Core origin (development and test only; register only)")
+	coreCA := flags.String("core-ca", "", "absolute PEM Core CA certificate trusted in addition to the system store (register only)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -65,6 +66,9 @@ func run(ctx context.Context, args []string) error {
 	}
 	if args[0] == "run" && *allowInsecureOrigin {
 		return errors.New("--allow-insecure-origin applies only to register; run uses the retained identity")
+	}
+	if args[0] == "run" && *coreCA != "" {
+		return errors.New("--core-ca applies only to register; run uses the retained identity")
 	}
 	if !filepath.IsAbs(*configFile) || !filepath.IsAbs(*stateDir) {
 		return errors.New("config and state-dir must be absolute paths")
@@ -123,7 +127,7 @@ func run(ctx context.Context, args []string) error {
 		if token == "" || len(token) > 4096 {
 			return errors.New("invalid enrollment token")
 		}
-		if _, err = node.InitIdentity(*stateDir, *coreURL, expected, *allowInsecureOrigin); err != nil {
+		if _, err = node.InitIdentityWithCoreCA(*stateDir, *coreURL, expected, *allowInsecureOrigin, *coreCA); err != nil {
 			return err
 		}
 		probeCtx, stopProbe := context.WithTimeout(ctx, 5*time.Second)

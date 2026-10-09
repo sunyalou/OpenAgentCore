@@ -23,6 +23,7 @@ from unittest import mock
 
 import node_install as installer
 import node_spec
+import ca_fixture
 
 
 
@@ -44,6 +45,19 @@ class Response(io.BytesIO):
 
 
 class NodeInstallTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Generate the CA fixtures before any per-test subprocess mock is active.
+        base = Path.home() / ".oac/tests/node-install"
+        base.mkdir(parents=True, exist_ok=True)
+        cls.ca_directory = tempfile.TemporaryDirectory(dir=base)
+        cls.ca_files = {name: ca_fixture.private_ca(cls.ca_directory.name, name=name)[0]
+                        for name in ("operator-ca", "other-ca")}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ca_directory.cleanup()
+
     def setUp(self):
         base = Path.home() / ".oac/tests/node-install"
         base.mkdir(parents=True, exist_ok=True)
@@ -725,6 +739,49 @@ class NodeInstallTests(unittest.TestCase):
             installer.install_system(self.args, "")
         self.assertFalse([call for call, _ in self.calls if call[:1] in (["useradd"], ["usermod"], ["systemctl"])])
         self.assertEqual({path: path.read_bytes() for path in (system / "etc").iterdir()}, before)
+
+    def core_ca_file(self, name="operator-ca"):
+        return self.ca_files[name]
+
+    def test_sudo_install_retains_the_operator_ca_and_reruns_without_changes(self):
+        system = self.sudo_host()
+        ca = self.core_ca_file()
+        self.args.core_ca = str(ca)
+        installer.install_system(self.args, "synthetic-once-token")
+        digest = hashlib.sha256(ca.read_bytes()).hexdigest()
+        record = json.loads((system / "etc" / (self.args.installation_id + ".json")).read_text())
+        self.assertEqual((record["core_ca"], record["core_ca_sha256"]), (str(ca), digest))
+        retained = self.root / installer.CORE_CA_NAME
+        self.assertEqual(retained.read_bytes(), ca.read_bytes())
+        self.assertEqual(stat.S_IMODE(retained.stat().st_mode), 0o600)
+        # Registration names the node's own private copy, never the operator path.
+        register = [call for call, _ in self.calls if "register" in call][0]
+        self.assertEqual(register[register.index("--core-ca") + 1], str(retained))
+        # A rerun with the same CA changes no recorded byte.
+        before = {path: path.read_bytes() for path in (system / "etc").iterdir()}
+        self.args.core_ca = str(ca)
+        installer.install_system(self.args, "")
+        self.assertEqual({path: path.read_bytes() for path in (system / "etc").iterdir()}, before)
+
+    def test_sudo_rerun_with_a_different_ca_changes_nothing(self):
+        system = self.sudo_host()
+        self.args.core_ca = str(self.core_ca_file())
+        installer.install_system(self.args, "synthetic-once-token")
+        self.args.core_ca = str(self.core_ca_file(name="other-ca"))
+        self.calls.clear()
+        with self.assertRaisesRegex(installer.InstallError, "different Core CA"):
+            installer.install_system(self.args, "")
+        self.assertFalse([call for call, _ in self.calls if call[:1] in (["useradd"], ["usermod"], ["systemctl"])])
+        self.assertTrue((system / "etc").exists())
+
+    def test_missing_core_ca_is_refused_before_changes(self):
+        system = self.sudo_host()
+        self.args.core_ca = str(self.home / "missing-ca.pem")
+        self.calls.clear()
+        with self.assertRaisesRegex(installer.InstallError, "core-ca"):
+            installer.install_system(self.args, "synthetic-once-token")
+        self.assertFalse([call for call, _ in self.calls if call[:1] in (["useradd"], ["usermod"], ["systemctl"])])
+        self.assertFalse((system / "etc").exists())
 
     def test_system_install_captures_helper_before_entering_service_user(self):
         self.sudo_host()

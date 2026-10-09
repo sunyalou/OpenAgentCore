@@ -22,6 +22,7 @@ import selectors
 import shutil
 import signal
 import socket
+import ssl
 import stat
 import subprocess
 import sys
@@ -153,8 +154,91 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise InstallError("Node bootstrap redirects are not supported")
 
 
+# The node's canonical private Core CA file, inside its own installation root.
+CORE_CA_NAME = "core-ca.pem"
+
+
+def core_ssl_context(ca_path=None):
+    """The system trust store, plus the operator's Core CA when one is configured.
+
+    The CA is appended, never substituted: artifacts may redirect to a public
+    release host whose certificate the system store still has to verify."""
+    context = ssl.create_default_context()
+    if ca_path:
+        try:
+            context.load_verify_locations(cafile=str(ca_path))
+        except (ssl.SSLError, ValueError, OSError, TypeError):
+            raise InstallError("The Core CA file is not a readable PEM certificate") from None
+    return context
+
+
+# The Core trust every request in this process uses. The installer sets it once
+# from --core-ca, and the generation helper from the node's retained identity;
+# left unset it is the system store alone, so a default run is unchanged.
+_CORE_TRUST = None
+
+
+def set_core_ca(ca_path):
+    global _CORE_TRUST
+    _CORE_TRUST = core_ssl_context(ca_path) if ca_path else None
+    distribution.set_ssl_context(_CORE_TRUST)
+
+
+def read_core_ca(value):
+    """Validate the operator's --core-ca file; returns (path, bytes, sha256) or None."""
+    if value is None:
+        return None
+    path = Path(value)
+    if not path.is_absolute() or path.resolve() != path or path.is_symlink() or not path.is_file():
+        raise InstallError("--core-ca must be an absolute path to a regular file without symlinks")
+    try:
+        data = path.read_bytes()
+    except OSError:
+        raise InstallError("Cannot read --core-ca; check its permissions") from None
+    probe = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    probe.verify_mode = ssl.CERT_REQUIRED
+    try:
+        probe.load_verify_locations(cadata=data.decode("utf-8", "replace"))
+    except (ssl.SSLError, ValueError, TypeError):
+        raise InstallError("--core-ca is not a PEM certificate file") from None
+    return path, data, hashlib.sha256(data).hexdigest()
+
+
+def materialize_core_ca(root, args):
+    """Write the operator's CA into the node's private root, before the service user runs."""
+    data = getattr(args, "core_ca_bytes", None)
+    if data is None:
+        return
+    target = Path(args.core_ca)
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise InstallError("Node Core CA must be a regular file")
+    if target.exists():
+        if file_digest(target) != getattr(args, "core_ca_digest", None):
+            raise InstallError("Retained node Core CA differs; preserve state and inspect enrollment")
+        return
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+
+
+def retained_core_ca(root):
+    """The CA file a node retained, checked against the digest its identity recorded."""
+    identity = private_json(root / "state/node/identity.json")
+    if not identity or not identity.get("core_ca"):
+        return None
+    path = Path(identity["core_ca"])
+    digest = identity.get("core_ca_sha256")
+    if (not path.is_absolute() or path.is_symlink() or not path.is_file()
+            or not re.fullmatch(r"[0-9a-f]{64}", digest or "") or file_digest(path) != digest):
+        raise InstallError("Retained node Core CA is missing or differs; preserve state and inspect enrollment" + NOTHING_CHANGED)
+    return path
+
+
 def open_request(request, timeout=15):
-    return urllib.request.build_opener(NoRedirect()).open(request, timeout=timeout)
+    handlers = [NoRedirect()]
+    if _CORE_TRUST is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=_CORE_TRUST))
+    return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
 
 
 def transient(error):
@@ -452,6 +536,9 @@ def register_node(root, args, token, helper_archive=None):
                         "--enrollment-token-file", secret_path]
             if args.allow_insecure_origin:
                 register.append("--allow-insecure-origin")
+            if getattr(args, "core_ca", None):
+                register.append("--core-ca")
+                register.append(args.core_ca)
             try:
                 checked(register, REGISTRATION_UNCONFIRMED, explain=registration_failure)
             except AddressChanged:
@@ -467,7 +554,13 @@ def register_node(root, args, token, helper_archive=None):
 
 def prepare_service_node(args, token, helper_archive):
     """Sudo mode, as the service user: everything but the root-owned system unit."""
-    root = open_node(args, token)
+    root = Path.home() / ".oac/nodes" / args.installation_id
+    safe_directory(root)
+    # The operator's CA was read as root before the fork; materialize it as the
+    # service user's private file before any Core request needs the trust.
+    materialize_core_ca(root, args)
+    set_core_ca(getattr(args, "core_ca", None))
+    open_node(args, token)
     with install_lock(root):
         register_node(root, args, token, helper_archive)
 
@@ -986,6 +1079,10 @@ def node_record(installation_id):
         # Validate the recorded address under the policy the record itself carries, so
         # uninstall can read an http record without the original command's flag.
         recorded_origin(record.get("core_url"), str(SYSTEM_RECORDS / (installation_id + ".json")), bool(record.get("allow_insecure_origin", False)))
+        if "core_ca" in record and (not isinstance(record.get("core_ca"), str) or not os.path.isabs(record["core_ca"])
+                                    or not re.fullmatch(r"[0-9a-f]{64}", record.get("core_ca_sha256", ""))):
+            raise InstallError(str(SYSTEM_RECORDS / (installation_id + ".json")) + " is not this installer's record; preserve "
+                               "it and inspect the host." + NOTHING_CHANGED)
     return record
 
 
@@ -993,6 +1090,10 @@ def install_system(args, token):
     """Sudo mode: prepare the host, then run the node as a root-owned system service."""
     os.environ["PATH"] = SAFE_PATH
     host_checks()
+    # The CA is read as root and validated before anything changes; the node's own
+    # copy under its private root is what the service user and later runs use.
+    core_ca = read_core_ca(getattr(args, "core_ca", None))
+    set_core_ca(core_ca[0] if core_ca else None)
     # Checks that change nothing run first, so a refusal leaves no trace, not even a lock.
     record = node_record(args.installation_id)
     configuration = None
@@ -1008,6 +1109,9 @@ def install_system(args, token):
         if bool(record.get("allow_insecure_origin", False)) != args.allow_insecure_origin:
             raise InstallError("This host's node was installed with a different insecure-origin policy; remove the node on "
                                "the Nodes page, uninstall it, then run a new command." + NOTHING_CHANGED)
+        if record.get("core_ca_sha256") != (core_ca[2] if core_ca else None):
+            raise InstallError("This host's node was installed with a different Core CA; remove the node on the Nodes "
+                               "page, uninstall it, then run a new command." + NOTHING_CHANGED)
     install_display.step("Checking host requirements")
     group, details = provider_group(provider)
     if record is None:
@@ -1030,9 +1134,23 @@ def install_system(args, token):
             # An opted-in installation records the policy so uninstall and reruns can
             # validate the address; a default record keeps its existing bytes.
             record_state["allow_insecure_origin"] = True
+        if core_ca is not None:
+            # The original operator path and digest detect a different CA on a rerun.
+            record_state["core_ca"] = str(core_ca[0])
+            record_state["core_ca_sha256"] = core_ca[2]
         root_file(SYSTEM_RECORDS / (args.installation_id + ".json"), json_text(record_state))
         args.system, args.provider = True, provider
+        # Every later Core request (registration, readiness) uses the node's own
+        # private copy, which the service user can read and the unit does not name.
+        if core_ca is not None:
+            args.core_ca_bytes, args.core_ca_digest = core_ca[1], core_ca[2]
+            args.core_ca = str(root / CORE_CA_NAME)
+        else:
+            args.core_ca_bytes, args.core_ca = None, None
         run_as(account, prepare_service_node, args, token, helper_archive)
+        # The service user has written the node's private CA copy; readiness and
+        # every later request use it instead of the operator's original file.
+        set_core_ca(args.core_ca)
         root_file(unit, system_unit(root, provider))
         install_display.step("Starting the node service")
         checked(["systemctl", "daemon-reload"], "Cannot reload systemd")
@@ -1087,6 +1205,7 @@ def confirm_removed(root, core_url, force):
             raise ValueError()
     except (TypeError, KeyError, ValueError, AttributeError):
         raise InstallError("Retained node identity is missing or invalid; rerun with --force only if Core no longer exists." + NOTHING_CHANGED) from None
+    set_core_ca(retained_core_ca(root))
     request = urllib.request.Request(core_url + "/api/v1/sandbox-node/identity?" + urlencode({"node_id": node_id}),
                                      headers={"Authorization": "Bearer " + credential})
     try:
@@ -1285,6 +1404,7 @@ def main(argv=None):
     parser.add_argument("--core-url")
     parser.add_argument("--allow-insecure-origin", action="store_true",
                         help="Allow a non-loopback plaintext http Core origin (development and test only)")
+    parser.add_argument("--core-ca", help="Absolute path to a PEM Core CA certificate trusted in addition to the system store")
     parser.add_argument("--provider", choices=("docker", "microsandbox"), help="Optional assertion; Core owns provider selection")
     parser.add_argument("--installation-id", required=True)
     parser.add_argument("--enrollment-token-stdin", action="store_true", help="Read the one-time enrollment token from standard input")
@@ -1326,7 +1446,7 @@ def main(argv=None):
     if os.geteuid() != 0:
         raise InstallError("Node installation and removal require root. Run this command with sudo.")
     if args.uninstall:
-        if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin:
+        if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin or args.core_ca:
             parser.error("--uninstall takes only --installation-id and --force")
         uninstall_system(args)
         return

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import pwd
 import select
+import shutil
 import socket
 import ssl
 import subprocess
@@ -22,6 +23,9 @@ import distribution
 import node_install as installer
 
 PROXIES = ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
+# Resolved before any test replaces the process PATH, so the fixture always finds
+# the openssl the environment actually has.
+OPENSSL = shutil.which("openssl") or "openssl"
 PAYLOAD = b"node proxy download fixture"
 AUTH = "Basic " + base64.b64encode(b"fixture:private password").decode()
 
@@ -100,7 +104,7 @@ class NodeProxyTests(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(dir=base)
         cls.directory = Path(cls.temporary.name)
         key, certificate = cls.directory / "key.pem", cls.directory / "cert.pem"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        subprocess.run([OPENSSL, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
                         "-keyout", str(key), "-out", str(certificate), "-days", "1",
                         "-subj", "/CN=downloads.invalid",
                         "-addext", "subjectAltName=DNS:downloads.invalid,IP:127.0.0.1"],

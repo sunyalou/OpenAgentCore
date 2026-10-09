@@ -9,6 +9,7 @@ You add a node by generating a command in Web and running it on the host. The [s
 ## Before you add a node
 
 - **Core has an HTTPS public URL** that the host and its sandboxes can reach. Nodes download from Core's console and connect to Core at `public_url`. Until it is set, Add node says *Set a public HTTPS address before adding nodes*; see [Configure the public address](./install.md#configure-the-domain-and-https). A development installation with `OAC_ALLOW_INSECURE_ORIGIN=1` may use a non-loopback `http://` URL instead: the generated command then carries `--allow-insecure-origin`, and both the artifact download and the node connection are plaintext.
+- **The host trusts Core's certificate.** When Core's HTTPS certificate is issued by a private certificate authority that the host's system trust store does not already hold, set `OAC_CORE_CA` to the CA file's absolute path in the shell that runs the generated command. Web then adds `--cacert "$OAC_CORE_CA"` to the installer download and `--core-ca "$OAC_CORE_CA"` to the installer, which verifies Core against the system trust store **plus** that CA. The installer keeps a private copy in the node's state, so `oac-node run` reuses it and takes no CA flag. A missing, unreadable or unparsable CA file stops the command.
 - **The sandbox configuration is saved.** Open **System** → **Manage sandbox configuration**, choose **Own machines**, the backend and a sandbox size, and **Save configuration**. To change a saved configuration, choose **Reset deployment** first. Every node of an installation uses that backend.
 - **The console can serve the node files.** Nodes download their Runtime and provider files from the console, which redirects to the release for files it does not hold, and check each file's size and SHA-256 against the release manifest. Node hosts therefore need access to the release. Without the files, Add node says *This console has no node files for …*.
 
@@ -42,6 +43,19 @@ printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR
 - The token reaches the installer on standard input, so it never appears in a process argument, an environment variable or sudo's log.
 - The leading space keeps the command out of the shell history where `HISTCONTROL` ignores such lines (the Debian and Ubuntu default).
 
+With `OAC_CORE_CA` set to an absolute path, Web adds the private CA to the same command:
+
+```sh
+ (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
+printf '\n==> Downloading node installer...\n' &&
+curl -fsS --max-time 30 --max-filesize 1048576 --cacert "$OAC_CORE_CA" 'https://core.example/node-install/node-install.pyz' -o "$d/node-install.pyz" &&
+printf '==> Verifying node installer...\n' &&
+printf '%s  %s\n' '<installer-sha256>' "$d/node-install.pyz" | sha256sum -c --status &&
+printf '%s\n' '<enrollment-token>' | $s python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --enrollment-token-stdin --source-url 'https://core.example' --core-url 'https://core.example' --core-ca "$OAC_CORE_CA" --provider 'docker' --installation-id '<installation-id>')
+```
+
+`OAC_CORE_CA` is a shell input to the generated command only; Core and Web never read it. The path must not contain whitespace, and it must be readable by the account running the command (the installer reads it as root and then stores a private copy for the node). When it is unset, the generated command is unchanged and the host's system trust store alone is used.
+
 The installer shows each phase as it runs and, once Core confirms the node, a summary with status and log commands. `export NO_COLOR=1` disables colors; the command passes this through sudo as `--no-color`. It never prints tokens.
 
 ### Host requirements
@@ -51,7 +65,7 @@ The installer shows each phase as it runs and, once Core confirms the node, a su
 - Docker: rootful Docker Engine running, its socket `/var/run/docker.sock` owned by the `docker` group with mode `0660`, enforcing CPU and memory limits (cgroup v2).
 - microsandbox: `/dev/kvm` in the `kvm` group (hardware or nested virtualization), and the libraries microsandbox links (glibc).
 - CPUs and memory for at least one sandbox of the installation's size, and about 2 GB of disk for the Runtime image.
-- HTTPS access to the console and Core at the public URL; sandboxes reach Core too.
+- HTTPS access to the console and Core at the public URL; sandboxes reach Core too. When Core uses a private certificate authority the host's system store does not hold, provide it with `OAC_CORE_CA`; otherwise the installer download and every node request fail with a certificate error.
 
 ### Download through a proxy
 
@@ -68,7 +82,7 @@ The proxy applies only to installation downloads. It is not saved in the node's 
 | Service user | System user `oac-node`, home `/var/lib/oac-node`, no login shell. An existing account with that home and a nologin shell is adopted; any other account named `oac-node` is refused |
 | Group | The group that owns `/var/run/docker.sock` (Docker) or `/dev/kvm` (microsandbox): `docker` or `kvm`, nothing else |
 | Service | `/etc/systemd/system/oac-node-<installation-id>.service`, a root-owned system unit with `User=oac-node`, enabled at boot. It restarts every 5 seconds while Core is unreachable and stops for good once Core no longer accepts the node |
-| Node state | `/var/lib/oac-node/.oac/nodes/<installation-id>/`: identity, configuration, node files. microsandbox keeps its images and sandboxes under `/var/lib/oac-node/.oac/m/` |
+| Node state | `/var/lib/oac-node/.oac/nodes/<installation-id>/`: identity, configuration, node files, and the private Core CA copy when `--core-ca` was given. microsandbox keeps its images and sandboxes under `/var/lib/oac-node/.oac/m/` |
 | Records | `/etc/oac-node/`: what the installer created or changed, used by reruns and uninstall |
 | Docker | The Runtime image, imported once, and a network `oac-node-<installation-id>` |
 | microsandbox network policy | Sandboxes may reach Core, DNS on the host and public addresses, and nothing else: no inbound connections and no private networks. A private model or MCP endpoint needs a policy change on the node |
@@ -121,7 +135,7 @@ The [reset contract](../../contracts/agents-api/sandbox-deployment.md#generation
    $s python3 "$d/node-install.pyz" ${NO_COLOR+--no-color} --uninstall --installation-id '<installation-id>')
    ```
 
-Uninstall first asks Core, at the address the node enrolled with, whether the node was removed, and refuses while Core still lists it. When the node enrolled with an address other than the current public URL, the dialog also shows **Old Core address gone?**: if that address no longer responds, it gives the command with `--force`, which skips the check; remove the node on the Nodes page first. Without the dialog, take the installer's SHA-256 from the `node-install.pyz` line of `https://core.example/node-install/SHA256SUMS`. Uninstall stops and removes the service, the node state, the records and the Docker network. It deletes the `oac-node` account only if the installer created it and no node remains; an adopted account only loses the groups the installer added.
+Uninstall first asks Core, at the address the node enrolled with, whether the node was removed, and refuses while Core still lists it. When `OAC_CORE_CA` is set, the uninstall command adds `--cacert "$OAC_CORE_CA"` to its installer download; it passes no CA flag to the installer, because the removal check reuses the CA retained in the node's identity. When the node enrolled with an address other than the current public URL, the dialog also shows **Old Core address gone?**: if that address no longer responds, it gives the command with `--force`, which skips the check; remove the node on the Nodes page first. Without the dialog, take the installer's SHA-256 from the `node-install.pyz` line of `https://core.example/node-install/SHA256SUMS`. Uninstall stops and removes the service, the node state, the records and the Docker network. It deletes the `oac-node` account only if the installer created it and no node remains; an adopted account only loses the groups the installer added.
 
 It never deletes sandboxes, volumes or images. It keeps the Runtime image and prints the `docker image rm` command. For microsandbox it keeps the store under `/var/lib/oac-node/.oac/m/`, prints how to delete it (`sudo -u oac-node rm -rf <store>`), and keeps a created account until the store is gone; rerun uninstall afterwards. With `--force`, microVMs may still use the store, so check `pgrep -u oac-node` first. Uninstall can be rerun until it completes.
 
@@ -152,6 +166,8 @@ Use manual registration when you manage the node's files and service yourself in
 `oac-node run` exits with status 78 once Core rejects its credential, after the node is removed; configure the supervisor not to restart it then (systemd: `RestartPreventExitStatus=78`).
 
 To register over a non-loopback `http://` origin for development or testing, add `--allow-insecure-origin` to `oac-node register`. The node then downloads artifacts and keeps a `ws://` connection over plaintext HTTP, and `oac-node run` takes no such flag: it uses the policy recorded at registration. Plaintext HTTP carries no transport encryption and is not for production.
+
+When Core's certificate is issued by a private certificate authority the host's system trust store does not hold, add `--core-ca /path/to/ca.pem` to `oac-node register`. The node verifies Core against the system trust store plus that file, and records the path and its SHA-256 in its identity. `oac-node run` and the generation helper take no CA flag: they load the recorded file, and a missing or changed file refuses to start. The path must be absolute, and the file a readable PEM certificate that the node's service account can read; `--core-ca` applies only to `register`.
 
 The node connects out to Core; Core needs no SSH or Docker TCP access to the host. Registration writes the node's identity to the state directory before contacting Core, so a lost response can be retried under the same identity. Keep the state directory on persistent storage, private to the node's account and used by one process at a time. Never copy it to another directory or host: Core refuses a second connection for a node while the first is open. The provider file can't change the node's capacity or sandbox configuration. Core compares its digest at registration and on every connection, and a node whose file differs takes no work until the approved configuration is restored.
 
@@ -197,6 +213,9 @@ A new group membership applies only to a new process. Restart the node service: 
 | KVM is unavailable, or `/dev/kvm` must be group-accessible | Enable virtualization; your distribution's KVM package sets `root:kvm 0660` |
 | This host has N CPUs and M MiB of memory; each sandbox needs … | Use a larger host, or change the sandbox size |
 | SELinux is enforcing on this host | Use a host supported by the installer; it does not change SELinux settings |
+| `--core-ca must be an absolute path to a regular file without symlinks`, or `--core-ca is not a PEM certificate file` | Fix `OAC_CORE_CA` so it names the private CA file, then rerun |
+| This host's node was installed with a different Core CA | The node was added with another CA. Remove it in Web, uninstall it, then add it again |
+| Retained node Core CA is missing or differs | Restore the CA file recorded in the node's identity, or remove the node and add it again |
 | This host already runs a sudo-mode node for another Core | Remove that node and uninstall it first |
 | Node installation and removal require root | Run Web's command with sudo, or from a root shell |
 | Core still lists this node | Remove it on the Nodes page first |

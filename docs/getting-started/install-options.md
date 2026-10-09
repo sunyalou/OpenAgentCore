@@ -113,7 +113,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'OpenAI-Beta: agents=v1' https://cor
 
 `401` means `/v1` reached Core, which asks for a key. `404` means it reached Web: fix the proxy, or application calls and every node connection will fail.
 
-TLS verification stays on everywhere. With a private certificate authority, node hosts, self-hosted machines and the Runtime image must trust it.
+TLS verification stays on everywhere. With a private certificate authority, node hosts, self-hosted machines and the Runtime image must trust it. For node hosts, set `OAC_CORE_CA` to the CA file's absolute path before running Web's install command: the command passes it to `curl` as `--cacert` and to the installer as `--core-ca`, which verifies Core against the system trust store plus that CA and retains a private copy for the node's own connections. The uninstall command uses the CA only for its download (`--cacert`); its Core removal check reuses the CA retained in the node's identity. [Manual registration](./nodes.md#register-a-node-manually) passes the same CA to `oac-node register`. Self-hosted executors and the Runtime image each trust the CA through their own host configuration.
 
 ### Try it locally with a quick tunnel
 

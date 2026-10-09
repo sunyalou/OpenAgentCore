@@ -21,6 +21,10 @@ type StoredIdentity struct {
 	CoreURL             string   `json:"core_url"`
 	OwnerEpoch          uint64   `json:"owner_epoch"`
 	AllowInsecureOrigin bool     `json:"allow_insecure_origin,omitempty"`
+	// CoreCA is the node's private CA file appended to the system trust store;
+	// CoreCASHA256 detects a rerun that points at a different certificate.
+	CoreCA       string `json:"core_ca,omitempty"`
+	CoreCASHA256 string `json:"core_ca_sha256,omitempty"`
 }
 
 func lockDirectory(dir string) (func(), error) {
@@ -101,15 +105,26 @@ func writeIdentity(dir string, s StoredIdentity) error {
 // InitIdentity creates the credential before any enrollment request. A lost
 // enrollment response can therefore be recovered by authenticating this identity.
 func InitIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bool) (StoredIdentity, error) {
+	return InitIdentityWithCoreCA(dir, coreURL, identity, allowInsecureOrigin, "")
+}
+
+// InitIdentityWithCoreCA additionally retains the operator's Core CA. The file
+// is validated and hashed here; run and the generation helper reuse the recorded
+// path instead of accepting the flag again.
+func InitIdentityWithCoreCA(dir, coreURL string, identity Identity, allowInsecureOrigin bool, coreCA string) (StoredIdentity, error) {
 	release, err := lockDirectory(dir)
 	if err != nil {
 		return StoredIdentity{}, err
 	}
 	defer release()
-	return initIdentity(dir, coreURL, identity, allowInsecureOrigin)
+	return initIdentity(dir, coreURL, identity, allowInsecureOrigin, coreCA)
 }
-func initIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bool) (StoredIdentity, error) {
+func initIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bool, coreCA string) (StoredIdentity, error) {
 	if _, err := validateEndpoint(coreURL, "", allowInsecureOrigin); err != nil {
+		return StoredIdentity{}, err
+	}
+	caPath, caDigest, err := coreCAIdentity(coreCA)
+	if err != nil {
 		return StoredIdentity{}, err
 	}
 	stored, err := readIdentity(dir)
@@ -118,7 +133,7 @@ func initIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bo
 		if expected.NodeID == "" {
 			expected.NodeID = stored.Identity.NodeID
 		}
-		if !sameBackend(stored.Identity, expected) || stored.CoreURL != coreURL || stored.AllowInsecureOrigin != allowInsecureOrigin {
+		if !sameBackend(stored.Identity, expected) || stored.CoreURL != coreURL || stored.AllowInsecureOrigin != allowInsecureOrigin || stored.CoreCA != caPath || stored.CoreCASHA256 != caDigest {
 			return StoredIdentity{}, errors.New("node configuration does not match its retained identity")
 		}
 		return stored, nil
@@ -136,7 +151,7 @@ func initIdentity(dir, coreURL string, identity Identity, allowInsecureOrigin bo
 	if _, err = rand.Read(secret); err != nil {
 		return StoredIdentity{}, err
 	}
-	stored = StoredIdentity{Identity: identity, Credential: hex.EncodeToString(secret), CoreURL: coreURL, AllowInsecureOrigin: allowInsecureOrigin}
+	stored = StoredIdentity{Identity: identity, Credential: hex.EncodeToString(secret), CoreURL: coreURL, AllowInsecureOrigin: allowInsecureOrigin, CoreCA: caPath, CoreCASHA256: caDigest}
 	if err = writeIdentity(dir, stored); err != nil {
 		return StoredIdentity{}, err
 	}

@@ -170,7 +170,7 @@ Core reads only its environment. Compose interpolates `.env` into the service en
 
 Core logs the file paths it loads, never environment values or file contents.
 
-Invalid explicit OAuth trusted origins stop Core at startup. Entries must be HTTPS origins without credentials, query or a non-root path. [Vaults](../contracts/agents-api/vaults.md) owns refresh and network policy. A private issuer also needs a trusted CA: independently managed Unix Core can use Go’s `SSL_CERT_FILE` PEM CA-bundle override, which preserves certificate verification. Managed installation has no custom-CA setting.
+Invalid explicit OAuth trusted origins stop Core at startup. Entries must be HTTPS origins without credentials, query or a non-root path. [Vaults](../contracts/agents-api/vaults.md) owns refresh and network policy. A private issuer also needs a trusted CA: independently managed Unix Core can use Go’s `SSL_CERT_FILE` PEM CA-bundle override, which preserves certificate verification. Managed installation has no custom-CA setting. Sandbox nodes use a separate, explicit contract: the node installer's `--core-ca` (or the generated command's `OAC_CORE_CA`) appends a CA to the node's system trust store and records it in the node's identity, and `SSL_CERT_FILE` does not apply to the node process.
 
 ## Appendix: Web environment without the installer
 
