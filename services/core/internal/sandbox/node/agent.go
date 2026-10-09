@@ -191,6 +191,18 @@ func (a *agent) connect(ctx context.Context) error {
 		copy := *websocket.DefaultDialer
 		copy.HandshakeTimeout = 10 * time.Second
 		dialer = &copy
+	} else {
+		copy := *dialer
+		dialer = &copy
+	}
+	// TLS verification is never relaxed: the retained CA is appended to the
+	// system store for this connection's WSS handshake.
+	if dialer.TLSClientConfig == nil {
+		config, err := tlsConfig(a.stored.CoreCA)
+		if err != nil {
+			return err
+		}
+		dialer.TLSClientConfig = config
 	}
 	conn, resp, err := dialer.DialContext(ctx, endpointURL, http.Header{"Authorization": []string{"Bearer " + a.config.Credential}})
 	if err != nil {

@@ -365,6 +365,9 @@ def prepare(args, installer):
     # The retained identity is the single home of the enrollment policy; project it
     # onto this helper invocation so every download below uses the same decision.
     args.allow_insecure_origin = bool(identity.get("allow_insecure_origin", False))
+    retained_ca = installer.retained_core_ca(root)
+    args.core_ca = str(retained_ca) if retained_ca else None
+    installer.set_core_ca(args.core_ca)
     with installer.install_lock(root), collection_lease(
             root, args.generation, installer, marker_identity(args),
             initialize=args.generation not in retained_configs(root, installer)

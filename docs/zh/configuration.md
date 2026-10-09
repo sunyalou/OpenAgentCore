@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 00f8af28cdb241a31e257cf54dac83f33000c2e53edfc005d9aab59ae76a9bd4
+source_hash: fe295859d1aeb67c0f9661e17500ce43fce802185f40985ac276b818ef54e356
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -174,7 +174,7 @@ Core 只读取其环境。Compose 把 `.env` 插值进服务环境。Compose 必
 
 Core 会记录所加载文件的路径，但绝不记录环境变量的值或文件内容。
 
-显式 OAuth 受信任源无效时，Core 会停止启动。条目必须是不含凭据、查询参数和非根路径的 HTTPS 源地址。[Vaults](../../contracts/agents-api/zh/vaults.md) 负责刷新和网络策略。私有颁发者还需要受信任的 CA：独立管理的 Unix Core 可以使用 Go 的 `SSL_CERT_FILE` PEM CA-bundle 覆盖机制，从而保留证书验证。托管安装没有自定义 CA 设置。
+显式 OAuth 受信任源无效时，Core 会停止启动。条目必须是不含凭据、查询参数和非根路径的 HTTPS 源地址。[Vaults](../../contracts/agents-api/zh/vaults.md) 负责刷新和网络策略。私有颁发者还需要受信任的 CA：独立管理的 Unix Core 可以使用 Go 的 `SSL_CERT_FILE` PEM CA-bundle 覆盖机制，从而保留证书验证。托管安装没有自定义 CA 设置。沙箱节点使用单独的显式契约：节点安装程序的 `--core-ca`（或生成命令的 `OAC_CORE_CA`）在节点的系统信任库中追加 CA，并记录到节点身份中；`SSL_CERT_FILE` 不适用于节点进程。
 
 ## 附录：没有安装程序时的 Web 环境 {#appendix-web-environment-without-the-installer}
 

@@ -64,6 +64,8 @@ Applications, nodes and sandboxes reach Core at one HTTPS address, the public UR
 1. Point your reverse proxy at Web.
 2. Set `OAC_PUBLIC_URL` to the HTTPS origin it serves, then run `oac apply`. See [changing the public URL](../configuration.md#changing-the-public-url).
 
+When the proxy serves a certificate from a private certificate authority, node hosts must trust that CA: see [HTTPS and the reverse proxy](./install-options.md#https-and-the-reverse-proxy) and [Add and manage nodes](./nodes.md#before-you-add-a-node).
+
 ## Set a default model
 
 Core-hosted Sessions without their own model provider use their harness's default model. On **System**, under **Default model configuration**, find the harness marked **Default** (Codex unless you changed `core.default_harness`) and choose **Set**. Enter the model ID, the protocol, and the provider's base URL and API key. MiniMax Code also needs the context window and max output tokens. See [default models](../configuration.md#default-models).

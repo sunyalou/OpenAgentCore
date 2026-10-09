@@ -67,6 +67,14 @@ func TestRunRejectsTheEnrollmentOnlyOriginFlag(t *testing.T) {
 	}
 }
 
+func TestRunRejectsTheCoreCAFlag(t *testing.T) {
+	// The retained identity is the only home of the CA; run never takes it again.
+	err := run(t.Context(), []string{"run", "--config", "/missing/provider.json", "--state-dir", "/missing/state", "--core-ca", "/missing/ca.pem"})
+	if err == nil || !strings.Contains(err.Error(), "--core-ca applies only to register") {
+		t.Fatalf("run accepted the register-only flag: %v", err)
+	}
+}
+
 func TestProtocolVersionRequiresNoProviderOrIdentity(t *testing.T) {
 	// This is a binary capability check, not a provider readiness probe.
 	if err := run(t.Context(), []string{"protocol-version"}); err != nil {

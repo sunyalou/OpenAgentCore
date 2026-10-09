@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 3493948d1e7111fb5c26a134c0f8848d8984b68fd135559903e0729c25832643
+source_hash: 987c1944efcdaae6abe5fb50c2150ab6b871938a378cd3c109dfaf108b6d8a2b
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。用 Core 密钥登录 Web，设置默认模型并签发 Project API 密钥。应用使用这些密钥调用 Core。Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -65,6 +65,8 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 
 1. 把反向代理指向 Web。
 2. 把 `OAC_PUBLIC_URL` 设为反向代理提供的 HTTPS 源地址，然后运行 `oac apply`。见[修改公开 URL](../configuration.md#changing-the-public-url)。
+
+反向代理提供的证书来自私有证书颁发机构时，节点主机必须信任该 CA：参阅 [HTTPS 与反向代理](install-options.md#https-and-the-reverse-proxy) 和[添加和管理节点](nodes.md#before-you-add-a-node)。
 
 ## 设置默认模型 {#set-a-default-model}
 

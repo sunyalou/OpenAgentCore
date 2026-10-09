@@ -25,6 +25,16 @@ class ArtifactError(DistributionError):
     """Transfer or immutable artifact provenance failed, not provider readiness."""
 
 
+# The Core trust the node installer configured for this process: the system store
+# plus an operator CA. Left unset, openers keep their default system trust.
+_SSL_CONTEXT = None
+
+
+def set_ssl_context(context):
+    global _SSL_CONTEXT
+    _SSL_CONTEXT = context
+
+
 def image_identities(manifest, name):
     """Both immutable IDs describe the same archive, as proven by the builder."""
     identities = []
@@ -285,7 +295,10 @@ def download_partial(url, partial, entry, logical_path, allow_insecure_origin=Fa
         if validator:
             headers['If-Range'] = validator
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.build_opener(ArtifactRedirect(allow_insecure_origin, source_origin)).open(request, timeout=30) as stream:
+    handlers = [ArtifactRedirect(allow_insecure_origin, source_origin)]
+    if _SSL_CONTEXT is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+    with urllib.request.build_opener(*handlers).open(request, timeout=30) as stream:
         if offset and (stream.status != 206 or not stream.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
             offset = 0  # The server sent the whole file; start over.
         if not offset:
@@ -376,7 +389,10 @@ def load_manifest(source_url=None, offline_root=None, allow_insecure_origin=Fals
             url = safe_url(source_url.rstrip('/') + '/node-install/' + name, allow_insecure_origin, source_origin)
             for attempt in range(3):
                 try:
-                    with urllib.request.build_opener(NoRedirect()).open(url, timeout=30) as stream:
+                    handlers = [NoRedirect()]
+                    if _SSL_CONTEXT is not None:
+                        handlers.append(urllib.request.HTTPSHandler(context=_SSL_CONTEXT))
+                    with urllib.request.build_opener(*handlers).open(url, timeout=30) as stream:
                         data = stream.read(1024 * 1024 + 1)
                     break
                 except urllib.error.HTTPError as error:
