@@ -1,25 +1,42 @@
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 /**
+ * The internal CA an operator exports in the shell as `OAC_CORE_CA`, as the
+ * argument `flag` of curl or the installer. It expands to nothing when the
+ * variable is unset or empty, so a host that trusts the CA already runs the
+ * command it ran before; set, the tool appends the CA to the system trust store
+ * and still verifies the certificate. The path is one shell word (no
+ * whitespace), as the console's origins are.
+ */
+const coreCa = (flag: string) => `\${OAC_CORE_CA:+ ${flag} "$OAC_CORE_CA"}`;
+
+/**
  * The start the node commands share: a private directory removed on exit, then
  * the console's installer, checked against its digest before anything runs. The
  * leading space keeps the command out of shell history under
  * HISTCONTROL=ignorespace. In sudo mode `s` is set before the `&&` chain, so a
  * failed download or check stops the command. It ends where the installer's own
- * line begins.
+ * line begins. The download takes the operator's internal CA when the shell
+ * sets `OAC_CORE_CA`, and the system trust store otherwise; Add node passes the
+ * same CA on to the installer, while Remove node's installer reads it from the
+ * retained identity.
  */
 function nodeInstaller(sourceUrl: string, scriptDigest: string): string {
   return ` (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
 export http_proxy="\${http_proxy-\${HTTP_PROXY-}}" https_proxy="\${https_proxy-\${HTTPS_PROXY-}}" no_proxy="\${no_proxy-\${NO_PROXY-}}"
 export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy" NO_PROXY="$no_proxy"
 printf '\\n==> Downloading node installer...\\n' &&
-curl -fs --max-time 30 --max-filesize 1048576 ${quote(sourceUrl + "/node-install/node-install.pyz")} -o "$d/node-install.pyz" || { c=$?; printf 'Cannot download node installer; check the console URL, TLS and proxy settings.\\n' >&2; exit "$c"; }
+curl -fs --max-time 30 --max-filesize 1048576${coreCa("--cacert")} ${quote(sourceUrl + "/node-install/node-install.pyz")} -o "$d/node-install.pyz" || { c=$?; printf 'Cannot download node installer; check the console URL, TLS and proxy settings.\\n' >&2; exit "$c"; }
 printf '==> Verifying node installer...\\n' &&
 printf '%s  %s\\n' ${quote(scriptDigest)} "$d/node-install.pyz" | sha256sum -c --status &&
 `;
 }
 
-/** Runs the downloaded installer, as root in sudo mode. */
+/**
+ * Runs the downloaded installer, as root in sudo mode. It carries no CA flag:
+ * Add node appends `--core-ca` for its one run, and Remove node's installer
+ * reads the CA from the retained identity instead.
+ */
 const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color}`;
 
 /**
@@ -33,7 +50,7 @@ const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HT
 export function nodeInstallCommand({ token, coreUrl, sourceUrl, provider, installationId, scriptDigest, allowInsecureOrigin = false }: {
   token: string; coreUrl: string; sourceUrl: string; provider: "docker" | "microsandbox"; installationId: string; scriptDigest: string; allowInsecureOrigin?: boolean;
 }): string {
-  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)}${allowInsecureOrigin ? " --allow-insecure-origin" : ""} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
+  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller}${coreCa("--core-ca")} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)}${allowInsecureOrigin ? " --allow-insecure-origin" : ""} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
 }
 
 /**

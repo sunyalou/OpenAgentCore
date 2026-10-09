@@ -38,6 +38,8 @@ describe("the host uninstall command under allow_insecure_origin", () => {
     const html = render(installation(true, "http://10.0.0.5:8080"));
     expect(html).toContain("http://10.0.0.5:8080/node-install/node-install.pyz");
     expect(html).toContain("--uninstall --installation-id");
+    // The operator's internal CA reaches curl as --cacert when the shell sets OAC_CORE_CA; the installer reads it from the retained identity.
+    expect(html).toContain("${OAC_CORE_CA:+ --cacert");
   });
   it("keeps the HTTPS requirement and issues no command when the switch is off", () => {
     const html = render(installation(false, "http://10.0.0.5:8080"));
