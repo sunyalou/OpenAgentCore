@@ -16,8 +16,10 @@ const coreCa = (flag: string) => `\${OAC_CORE_CA:+ ${flag} "$OAC_CORE_CA"}`;
  * leading space keeps the command out of shell history under
  * HISTCONTROL=ignorespace. In sudo mode `s` is set before the `&&` chain, so a
  * failed download or check stops the command. It ends where the installer's own
- * line begins. The download and the installer take the operator's internal CA
- * when the shell sets `OAC_CORE_CA`, and the system trust store otherwise.
+ * line begins. The download takes the operator's internal CA when the shell
+ * sets `OAC_CORE_CA`, and the system trust store otherwise; Add node passes the
+ * same CA on to the installer, while Remove node's installer reads it from the
+ * retained identity.
  */
 function nodeInstaller(sourceUrl: string, scriptDigest: string): string {
   return ` (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
@@ -30,8 +32,12 @@ printf '%s  %s\\n' ${quote(scriptDigest)} "$d/node-install.pyz" | sha256sum -c -
 `;
 }
 
-/** Runs the downloaded installer, as root in sudo mode. */
-const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color}${coreCa("--core-ca")}`;
+/**
+ * Runs the downloaded installer, as root in sudo mode. It carries no CA flag:
+ * Add node appends `--core-ca` for its one run, and Remove node's installer
+ * reads the CA from the retained identity instead.
+ */
+const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color}`;
 
 /**
  * Adds this host as a node. The one-time token reaches the installer only on
@@ -44,7 +50,7 @@ const runInstaller = `$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HT
 export function nodeInstallCommand({ token, coreUrl, sourceUrl, provider, installationId, scriptDigest, allowInsecureOrigin = false }: {
   token: string; coreUrl: string; sourceUrl: string; provider: "docker" | "microsandbox"; installationId: string; scriptDigest: string; allowInsecureOrigin?: boolean;
 }): string {
-  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)}${allowInsecureOrigin ? " --allow-insecure-origin" : ""} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
+  return `${nodeInstaller(sourceUrl, scriptDigest)}printf '%s\\n' ${quote(token)} | ${runInstaller}${coreCa("--core-ca")} --enrollment-token-stdin --source-url ${quote(sourceUrl)} --core-url ${quote(coreUrl)}${allowInsecureOrigin ? " --allow-insecure-origin" : ""} --provider ${quote(provider)} --installation-id ${quote(installationId)})`;
 }
 
 /**

@@ -86,6 +86,55 @@ fs.readFileSync(0,'utf8');`);
       expect(withCa.installer).toContain("--enrollment-token-stdin");
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+  it("executes the uninstall command with the operator's CA on curl but never on the installer", () => {
+    const parent = join(homedir(), ".oac", "tests");
+    mkdirSync(parent, { recursive: true });
+    const root = mkdtempSync(join(parent, "node-ca-uninstall-"));
+    const bin = join(root, "bin"), temporary = join(root, "tmp");
+    mkdirSync(bin); mkdirSync(temporary);
+    const payload = "verified installer fixture\n";
+    const fixture = join(root, "fixture"), curlReport = join(root, "curl.json"), installerReport = join(root, "installer.json"), printfReport = join(root, "printf.log");
+    writeFileSync(fixture, payload);
+    function executable(name: string, code: string) {
+      const path = join(bin, name);
+      writeFileSync(path, `#!${process.execPath}\n${code}`);
+      chmodSync(path, 0o700);
+    }
+    executable("curl", `const fs=require('node:fs');
+const args=process.argv.slice(2);
+if(args.includes('-k')||args.includes('--insecure')) process.exit(90);
+fs.writeFileSync(process.env.CURL_REPORT,JSON.stringify(args));
+fs.writeFileSync(args[args.indexOf('-o')+1],fs.readFileSync(process.env.FIXTURE));`);
+    executable("sha256sum", `const fs=require('node:fs'), crypto=require('node:crypto');
+const line=fs.readFileSync(0,'utf8').trimEnd(), split=line.indexOf('  ');
+const actual=crypto.createHash('sha256').update(fs.readFileSync(line.slice(split+2))).digest('hex');
+process.exit(actual===line.slice(0,split)?0:1);`);
+    executable("id", `console.log('0');`);
+    executable("printf", `require('node:fs').appendFileSync(process.env.PRINTF_REPORT,'called\\n');`);
+    // The installer rejects an argument it does not accept, as node-install.py's parser does.
+    executable("python3", `const fs=require('node:fs');
+const args=process.argv.slice(2);
+if(args.includes('--uninstall')&&args.includes('--core-ca')) { console.error('node-install.pyz: error: --uninstall takes only --installation-id and --force'); process.exit(2); }
+fs.writeFileSync(process.env.INSTALLER_REPORT,JSON.stringify(args));
+fs.readFileSync(0,'utf8');`);
+    const digest = createHash("sha256").update(payload).digest("hex");
+    const ca = "/etc/oac/internal-ca.pem";
+    const command = nodeUninstallCommand({ sourceUrl: "https://console.example", installationId: "fixture", scriptDigest: digest });
+    expect(command).not.toMatch(/(^|\s)(-k|--insecure)(\s|$)/);
+    const env: Record<string, string | undefined> = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TMPDIR: temporary, FIXTURE: fixture, CURL_REPORT: curlReport, INSTALLER_REPORT: installerReport, PRINTF_REPORT: printfReport, OAC_CORE_CA: ca };
+    try {
+      const result = spawnSync("sh", ["-c", command], { env, encoding: "utf8" });
+      // The installer's parser accepts the arguments: no "--core-ca" reaches it.
+      expect(result.status).toBe(0);
+      const curl = JSON.parse(readFileSync(curlReport, "utf8")) as string[];
+      const installer = JSON.parse(readFileSync(installerReport, "utf8")) as string[];
+      // curl downloads the installer over the private CA.
+      expect(curl[curl.indexOf("--cacert") + 1]).toBe(ca);
+      // The installer reads the CA from the retained identity; the flag would be rejected.
+      expect(installer).not.toContain("--core-ca");
+      expect(installer.slice(1)).toEqual(["--uninstall", "--installation-id", "fixture"]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
   it("creates the exact uninstall commands, with no token", () => {
     const uninstall = () => nodeUninstallCommand({ sourceUrl: "https://console.example", installationId: "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f", scriptDigest: digest });
     expect(uninstall()).toBe(` (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT; s=; [ "$(id -u)" -eq 0 ] || s=sudo
@@ -95,9 +144,9 @@ printf '\\n==> Downloading node installer...\\n' &&
 curl -fs --max-time 30 --max-filesize 1048576\${OAC_CORE_CA:+ --cacert "$OAC_CORE_CA"} 'https://console.example/node-install/node-install.pyz' -o "$d/node-install.pyz" || { c=$?; printf 'Cannot download node installer; check the console URL, TLS and proxy settings.\\n' >&2; exit "$c"; }
 printf '==> Verifying node installer...\\n' &&
 printf '%s  %s\\n' '${digest}' "$d/node-install.pyz" | sha256sum -c --status &&
-$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color}\${OAC_CORE_CA:+ --core-ca "$OAC_CORE_CA"} --uninstall --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f')`);
+$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color} --uninstall --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f')`);
     expect(nodeUninstallCommand({ sourceUrl: "https://console.example", installationId: "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f", scriptDigest: digest, force: true }).split("\n").at(-1))
-      .toBe(`$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color}\${OAC_CORE_CA:+ --core-ca "$OAC_CORE_CA"} --uninstall --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f' --force)`);
+      .toBe(`$s \${s:+--preserve-env=http_proxy,https_proxy,no_proxy,HTTP_PROXY,HTTPS_PROXY,NO_PROXY} python3 "$d/node-install.pyz" \${NO_COLOR+--no-color} --uninstall --installation-id '7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f' --force)`);
   });
   it("points at the system node journal", () => {
     expect(nodeLogCommand("7f3c2a90-fixture")).toBe("sudo journalctl -u oac-node-7f3c2a90-fixture.service");
